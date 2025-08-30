@@ -1,5 +1,9 @@
+use core::{
+    pin::Pin,
+    result::Result,
+    task::{Context, Poll},
+};
 use tokio_stream::Stream;
-use core::{pin::Pin, task::{Context, Poll}, result::Result};
 
 mod private_try_stream {
     use super::Stream;

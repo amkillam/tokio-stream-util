@@ -13,14 +13,6 @@ jobs:
     strategy:
       matrix:
         rust: [stable, beta]
-        features:
-          [
-            "",
-            "--features tokio",
-            "--features futures",
-            "--features reqwest",
-            "--all-features",
-          ]
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4

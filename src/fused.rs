@@ -1,5 +1,5 @@
+use core::{ops::DerefMut, pin::Pin};
 use tokio_stream::Stream;
-use core::{pin::Pin,  ops::DerefMut};
 
 /// A stream which tracks whether or not the underlying stream
 /// should no longer be polled.

@@ -1,6 +1,6 @@
 # tokio-stream-ext
 
-Extension traits for the [tokio-stream](https://docs.rs/tokio-stream) crate
+Extension traits for [tokio-stream](https://docs.rs/tokio-stream)'s `Stream` trait.
 
 ## License
 
