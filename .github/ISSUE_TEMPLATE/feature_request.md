@@ -2,7 +2,7 @@
 name: Feature request
 about: Suggest an idea for this project
 title: ""
-labels: A-tokio-stream-ext, C-feature-request
+labels: A-tokio-stream-util, C-feature-request
 assignees: ""
 ---
 

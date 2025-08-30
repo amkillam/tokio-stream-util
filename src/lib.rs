@@ -1,4 +1,4 @@
-//! Extension traits for [tokio-stream](https://docs.rs/tokio-stream)'s `Stream` trait.
+//! Extension traits and utilities for [tokio-stream](https://docs.rs/tokio-stream)'s `Stream` trait.
 #![no_std]
 #![doc(test(
     no_crate_inject,

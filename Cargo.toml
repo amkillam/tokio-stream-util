@@ -1,16 +1,16 @@
 [package]
-name = "tokio-stream-ext"
+name = "tokio-stream-util"
 version = "0.1.0"
 edition = "2018"
 authors = ["Adam Killam <adammkillam@gmail.com>"]
-description = "Extension traits for tokio-stream's `Stream` trait."
+description = "Extension traits and utilities for tokio-stream's `Stream` trait."
 license = "MIT"
-repository = "https://github.com/amkillam/tokio-stream-ext"
+repository = "https://github.com/amkillam/tokio-stream-util"
 readme = "README.md"
 keywords = ["tokio", "stream", "asynchronous", "async"]
 categories = ["asynchronous", "network-programming", "data-structures"]
-homepage = "https://github.com/amkillam/tokio-stream-ext"
-documentation = "https://docs.rs/tokio-stream-ext"
+homepage = "https://github.com/amkillam/tokio-stream-util"
+documentation = "https://docs.rs/tokio-stream-util"
 rust-version = "1.36"
 
 [features]
