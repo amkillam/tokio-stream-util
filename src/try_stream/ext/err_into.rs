@@ -2,7 +2,6 @@ use super::TryStream;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 /// Stream for the [`err_into`](super::TryStreamExt::err_into) method.
@@ -44,7 +43,10 @@ where
     }
 }
 
-impl<St, E, Item> Sink<Item> for ErrInto<St, E>
+#[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
+impl<St, E, Item> tokio_sink::Sink<Item> for ErrInto<St, E>
 where
     St: Sink<Item>,
     St::Error: Into<E>,
