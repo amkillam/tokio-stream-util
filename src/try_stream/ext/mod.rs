@@ -5,14 +5,11 @@
 
 use core::fmt;
 use core::future::Future;
-use core::num::NonZeroUsize;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 #[cfg(feature = "alloc")]
 use either::Either;
-use futures_core::future::{FusedFuture, TryFuture};
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use futures_core::future::TryFuture;
 use tokio_stream::Stream;
 
 use super::TryStream;
@@ -297,7 +294,7 @@ pub trait TryStreamExt: TryStream {
     #[cfg_attr(docsrs, doc(cfg(feature = "sink")))]
     fn try_forward<S>(self, sink: S) -> TryForward<Self, S>
     where
-        S: Sink<Self::Ok, Error = Self::Error>,
+        S: tokio_sink::Sink<Self::Ok, Error = Self::Error>,
         Self: Sized,
     {
         TryForward::new(self, sink)

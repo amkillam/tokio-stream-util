@@ -23,6 +23,7 @@ where
         + FnMut(Result<St::Ok, St::Error>) -> Result<St::Ok, St::Error>
         + FnOnce(Result<St::Ok, St::Error>) -> Result<St::Ok, St::Error>,
 {
+    /// Creates a new `MapErr` combinator.
     pub fn new(stream: St, f: F) -> Self {
         let stream = IntoStream::new(stream);
         MapErr(stream.map(map_err_fn(f)))
@@ -63,6 +64,8 @@ where
     }
 }
 
+#[cfg(feature = "sink")]
+use tokio_sink::Sink;
 #[cfg(feature = "sink")]
 impl<St, Item, F> Sink<Item> for MapErr<St, F>
 where

@@ -11,7 +11,7 @@ keywords = ["tokio", "stream", "asynchronous", "async"]
 categories = ["asynchronous", "network-programming", "data-structures"]
 homepage = "https://github.com/amkillam/tokio-stream-util"
 documentation = "https://docs.rs/tokio-stream-util"
-rust-version = "1.36"
+rust-version = "1.45"
 
 [features]
 default = ["std", "alloc"]

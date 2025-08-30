@@ -1,3 +1,5 @@
+//! Utilities for working with streams that return `Result` values.
+
 mod ext;
 pub use ext::*;
 

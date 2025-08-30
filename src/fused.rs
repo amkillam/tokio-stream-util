@@ -1,3 +1,16 @@
+//! A stream which can report whether or not it has terminated.
+//! !!
+//! This is similar to the `FusedFuture` trait in the standard library.
+//! However, unlike `FusedFuture`, this trait is not implemented for all
+//! streams, only those which explicitly opt in to it.
+//! This is because not all streams can meaningfully report whether or not
+//! they have terminated.
+//! !!! This trait is primarily useful for combinators which need to
+//! track whether or not a stream has terminated.
+//! !!! It is not intended for general use.
+//! !!! For a stream that is guaranteed to terminate, use the `StreamExt::fuse`
+//! !!! method to create a stream that implements `FusedStream`.
+
 use core::{ops::DerefMut, pin::Pin};
 use tokio_stream::Stream;
 

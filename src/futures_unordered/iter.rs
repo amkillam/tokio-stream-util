@@ -115,7 +115,7 @@ impl<'a, Fut: Unpin + 'a> Iterator for IterMut<'a, Fut> {
     }
 }
 
-impl<'a, Fut: Unpin + 'a> ExactSizeIterator for IterMut<'_, Fut> {}
+impl<'a, Fut: Unpin + 'a> ExactSizeIterator for IterMut<'a, Fut> {}
 
 impl<'a, Fut: 'a> Iterator for IterPinRef<'a, Fut> {
     type Item = Pin<&'a Fut>;
@@ -158,7 +158,7 @@ impl<'a, Fut: Unpin + 'a> Iterator for Iter<'a, Fut> {
     }
 }
 
-impl<'a, Fut: Unpin + 'a> ExactSizeIterator for Iter<'_, Fut> {}
+impl<'a, Fut: Unpin + 'a> ExactSizeIterator for Iter<'a, Fut> {}
 
 // SAFETY: we do nothing thread-local and there is no interior mutability,
 // so the usual structural `Send`/`Sync` apply.

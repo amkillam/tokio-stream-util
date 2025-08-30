@@ -4,9 +4,6 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 
 use either::Either;
-use futures_core::TryFuture;
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 use super::IntoStream;
@@ -27,7 +24,7 @@ where
     >,
 }
 
-struct TryFlattenUnorderedProj<'pin, St>
+pub(crate) struct TryFlattenUnorderedProj<'pin, St>
 where
     NestedTryStreamIntoEitherTryStream<St>: Stream,
 {
@@ -192,7 +189,7 @@ pub struct NestedTryStreamIntoEitherTryStream<St> {
     stream: IntoFuseStream<St>,
 }
 
-struct NestedTryStreamIntoEitherTryStreamProj<'pin, St>
+pub(crate) struct NestedTryStreamIntoEitherTryStreamProj<'pin, St>
 where
     St: TryStream,
     St::Ok: TryStream + Unpin,
@@ -368,8 +365,10 @@ where
     }
 }
 
-// Forwarding impl of Sink from the underlying stream
 #[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
+// Forwarding impl of Sink from the underlying stream
 impl<St, Item> Sink<Item> for NestedTryStreamIntoEitherTryStream<St>
 where
     St: TryStream + Sink<Item>,

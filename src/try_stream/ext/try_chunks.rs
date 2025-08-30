@@ -23,7 +23,9 @@ pub struct TryChunks<St: TryStream> {
 
 struct TryChunksProj<'pin, St: TryStream> {
     stream: Pin<&'pin mut IntoFuseStream<St>>,
+    #[allow(dead_code)]
     items: &'pin mut Vec<St::Ok>,
+    #[allow(dead_code)]
     cap: &'pin usize,
 }
 

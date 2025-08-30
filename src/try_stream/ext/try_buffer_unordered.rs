@@ -1,16 +1,13 @@
-use crate::try_stream::IntoFuseStream;
+use super::{IntoFuseStream, TryStream};
 use crate::{FusedStream, FuturesUnordered};
-
-use super::TryStream;
-use core::fmt;
-use core::num::NonZeroUsize;
-use core::pin::Pin;
-use core::task::{Context, Poll};
+use core::{
+    fmt,
+    num::NonZeroUsize,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use futures_core::future::TryFuture;
-use futures_util::future::IntoFuture;
-use futures_util::TryFutureExt;
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use futures_util::future::{IntoFuture, TryFutureExt};
 use tokio_stream::Stream;
 
 /// Stream for the
@@ -97,8 +94,10 @@ where
     }
 }
 
-// Forwarding impl of Sink from the underlying stream
 #[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
+// Forwarding impl of Sink from the underlying stream
 impl<St, Item> Sink<Item> for TryBufferUnordered<St>
 where
     St: TryStream + Sink<Item>,

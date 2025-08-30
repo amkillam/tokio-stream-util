@@ -1,3 +1,63 @@
+//! An unbounded queue of futures which yields results in submission order.
+//!! This is similar to `FuturesUnordered`, but imposes a FIFO order on top of
+//!! the set of futures.
+//!!
+//!! Futures are pushed into this queue and their realized values are yielded in
+//!! order. This structure is optimized to manage a large number of futures.
+//!! Futures managed by `FuturesOrdered` will only be polled when they generate
+//!! notifications. This reduces the required amount of work needed to coordinate
+//!! large numbers of futures.
+//!!
+//!! When a `FuturesOrdered` is first created, it does not contain any futures.
+//!! Calling `poll_next` in this state will result in `Poll::Ready(None)`
+//!! to be returned. Futures are submitted to the queue using `push_back` (or
+//!! `push_front`); however, the future will **not** be polled at this point.
+//!! `FuturesOrdered` will only poll managed futures when `poll_next` is called.
+//!! As such, it is important to call `poll_next` after pushing new futures.
+//!! If `poll_next` returns `Poll::Ready(None)` this means that the queue is
+//!! currently not managing any futures. A future may be submitted to the queue
+//!! at a later time. At that point, a call to `poll_next` will either
+//!! return the future's resolved value **or** `Poll::Pending` if the future has
+//!! not yet completed. When multiple futures are submitted to the queue,
+//!! `poll_next` will return `Poll::Pending` until the first future completes, even if
+//!! some of the later futures have already completed.
+//!! Note that you can create a ready-made `FuturesOrdered` via the
+//!! `collect` method, or you can start with an empty queue with the
+//!! `FuturesOrdered::new` constructor.
+//!! This type is only available when the `std` or `alloc` feature of this
+//!! library is activated, and it is activated by default.
+//!
+//! This type is similar to the `FuturesOrdered` type in the `futures`
+//! crate, but is adapted to work in the `tokio` ecosystem.
+//!! # Examples
+//!! ```
+//! use tokio_stream::StreamExt;
+//! use tokio_util::futures_ordered::FuturesOrdered;
+//!! use std::time::Duration;
+//!! use tokio::time::sleep;
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let mut futures = FuturesOrdered::new();
+//!
+//!     futures.push_back(async {
+//!         sleep(Duration::from_millis(300)).await;
+//!         1
+//!     });
+//!     futures.push_back(async {
+//!         sleep(Duration::from_millis(100)).await;
+//!         2
+//!     });
+//!     futures.push_back(async {
+//!         sleep(Duration::from_millis(200)).await;
+//!         3
+//!     });
+//!
+//!     let results: Vec<_> = futures.collect().await;
+//!     assert_eq!(results, vec![1, 2, 3]);
+//! }
+//! ```
+
 use crate::futures_unordered::FuturesUnordered;
 use crate::FusedStream;
 use alloc::collections::binary_heap::{BinaryHeap, PeekMut};
@@ -17,9 +77,9 @@ struct Ordered<T> {
 }
 
 /// Projection type returned by `Ordered::project`.
-pub struct PinOrdered<'pin, T: ?Sized> {
-    pub data: Pin<&'pin mut T>,
-    pub index: &'pin mut i64,
+pub(crate) struct OrderedProj<'pin, T: ?Sized> {
+    data: Pin<&'pin mut T>,
+    index: &'pin mut i64,
 }
 
 impl<T> Ordered<T> {
@@ -28,10 +88,10 @@ impl<T> Ordered<T> {
     /// Safety: this uses `get_unchecked_mut` and `Pin::new_unchecked` to
     /// construct the projection. The caller must ensure the projection is
     /// used according to `Pin` invariants.
-    pub fn project<'pin>(self: Pin<&'pin mut Self>) -> PinOrdered<'pin, T> {
+    pub fn project<'pin>(self: Pin<&'pin mut Self>) -> OrderedProj<'pin, T> {
         unsafe {
             let Self { data, index } = Pin::get_unchecked_mut(self);
-            PinOrdered {
+            OrderedProj {
                 data: Pin::new_unchecked(data),
                 index,
             }

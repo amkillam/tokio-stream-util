@@ -21,6 +21,19 @@ where
     pending_item: Option<St::Ok>,
 }
 
+pub(crate) struct TryFilterProj<'pin, St, Fut, F>
+where
+    St: TryStream,
+{
+    stream: Pin<&'pin mut St>,
+    #[allow(dead_code)]
+    f: &'pin mut F,
+    #[allow(dead_code)]
+    pending_fut: Pin<&'pin mut Option<Fut>>,
+    #[allow(dead_code)]
+    pending_item: &'pin mut Option<St::Ok>,
+}
+
 impl<St, Fut, F> Unpin for TryFilter<St, Fut, F>
 where
     St: TryStream + Unpin,
@@ -37,21 +50,14 @@ where
     // to be pinned, as they come from `self` which is pinned, and we never
     // offer an unpinned `&mut A` or `&mut B` through `Pin<&mut Self>`. We
     // also don't have an implementation of `Drop`, nor manual `Unpin`.
-    unsafe fn project(
-        self: Pin<&mut Self>,
-    ) -> (
-        Pin<&mut St>,
-        &mut F,
-        Pin<&mut Option<Fut>>,
-        &mut Option<St::Ok>,
-    ) {
+    unsafe fn project(self: Pin<&mut Self>) -> TryFilterProj<'_, St, Fut, F> {
         let this = self.get_unchecked_mut();
-        (
-            Pin::new_unchecked(&mut this.stream),
-            &mut this.f,
-            Pin::new_unchecked(&mut this.pending_fut),
-            &mut this.pending_item,
-        )
+        TryFilterProj {
+            stream: Pin::new_unchecked(&mut this.stream),
+            f: &mut this.f,
+            pending_fut: Pin::new_unchecked(&mut this.pending_fut),
+            pending_item: &mut this.pending_item,
+        }
     }
 }
 
@@ -135,22 +141,22 @@ where
 {
     type Item = Result<St::Ok, St::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let (mut stream, f, mut pending_fut, pending_item) = unsafe { self.project() };
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut proj = unsafe { self.as_mut().project() };
 
         loop {
-            if let Some(fut) = pending_fut.as_mut().as_pin_mut() {
+            if let Some(fut) = proj.pending_fut.as_mut().as_pin_mut() {
                 let res = match fut.poll(cx) {
                     Poll::Ready(res) => res,
                     Poll::Pending => return Poll::Pending,
                 };
-                pending_fut.set(None);
+                proj.pending_fut.set(None);
                 if res {
-                    return Poll::Ready(pending_item.take().map(Ok));
+                    return Poll::Ready(proj.pending_item.take().map(Ok));
                 }
-                *pending_item = None;
+                *proj.pending_item = None;
             } else {
-                let item_res = match stream.as_mut().try_poll_next(cx) {
+                let item_res = match proj.stream.as_mut().try_poll_next(cx) {
                     Poll::Ready(item_res) => item_res,
                     Poll::Pending => return Poll::Pending,
                 };
@@ -160,8 +166,8 @@ where
                     Some(Err(e)) => return Poll::Ready(Some(Err(e))),
                     None => None,
                 } {
-                    pending_fut.set(Some(f(&item)));
-                    *pending_item = Some(item);
+                    proj.pending_fut.set(Some((proj.f)(&item)));
+                    *proj.pending_item = Some(item);
                 } else {
                     return Poll::Ready(None);
                 }

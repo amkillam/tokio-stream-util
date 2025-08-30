@@ -1,3 +1,29 @@
+//! Stream for the [`flatten_unordered`](super::StreamExt::flatten_unordered)
+//! method with ability to specify flow controller.
+//! ! This is a more generic version of `FlattenUnordered` which allows to
+//! ! control the flow of items from the base stream to the inner streams.
+//! ! The main use-case is to immediately return an item from the base stream
+//! //! ! without adding it to the inner streams bucket.
+//!
+//! # Examples
+//! ```rust
+//! use futures_util::stream::{self, StreamExt};
+//! use tokio::runtime::Runtime;
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!    let stream_of_streams = stream::iter(vec![
+//!     stream::iter(vec![1, 2, 3]),
+//!     stream::iter(vec![4, 5, 6]),
+//!     stream::iter(vec![7, 8, 9]),
+//!     ]);
+//!     let mut flattened = stream_of_streams.flatten_unordered();
+//!     while let Some(item) = flattened.next().await {
+//!     println!("{}", item);
+//!     }
+//! }
+//!
+
 use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
@@ -313,15 +339,16 @@ where
 }
 
 /// Projection struct for FlattenUnorderedWithFlowController
-struct FlattenUnorderedWithFlowControllerProj<'pin, St: ?Sized + Stream, Fc: ?Sized> {
-    pub inner_streams: Pin<&'pin mut FuturesUnordered<PollStreamFut<<St as Stream>::Item>>>,
-    pub stream: Pin<&'pin mut St>,
-    pub poll_state: &'pin mut SharedPollState,
-    pub limit: &'pin mut Option<NonZeroUsize>,
-    pub is_stream_done: &'pin mut bool,
-    pub inner_streams_waker: &'pin mut Arc<WrappedWaker>,
-    pub stream_waker: &'pin mut Arc<WrappedWaker>,
-    pub flow_controller: &'pin mut PhantomData<Fc>,
+pub(crate) struct FlattenUnorderedWithFlowControllerProj<'pin, St: ?Sized + Stream, Fc: ?Sized> {
+    inner_streams: Pin<&'pin mut FuturesUnordered<PollStreamFut<<St as Stream>::Item>>>,
+    stream: Pin<&'pin mut St>,
+    poll_state: &'pin mut SharedPollState,
+    limit: &'pin mut Option<NonZeroUsize>,
+    is_stream_done: &'pin mut bool,
+    inner_streams_waker: &'pin mut Arc<WrappedWaker>,
+    stream_waker: &'pin mut Arc<WrappedWaker>,
+    #[allow(dead_code)]
+    flow_controller: &'pin mut PhantomData<Fc>,
 }
 
 impl<St, Fc> fmt::Debug for FlattenUnorderedWithFlowController<St, Fc>
@@ -370,6 +397,7 @@ where
         }
     }
 
+    /// Returns a reference to the underlying stream.
     pub fn get_ref(&self) -> &St {
         &self.stream
     }

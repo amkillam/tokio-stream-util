@@ -18,9 +18,10 @@ pub struct IntoFuseStream<St> {
 }
 
 /// Projection returned by `IntoFuseStream::project`.
-pub struct IntoFuseStreamProj<'pin, St> {
-    pub stream: Pin<&'pin mut IntoStream<St>>,
-    pub terminated: &'pin AtomicBool,
+pub(crate) struct IntoFuseStreamProj<'pin, St> {
+    stream: Pin<&'pin mut IntoStream<St>>,
+    #[allow(dead_code)]
+    terminated: &'pin AtomicBool,
 }
 
 impl<St> IntoFuseStream<St> {

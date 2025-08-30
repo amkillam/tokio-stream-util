@@ -7,8 +7,6 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 
 use futures_core::stream::FusedStream;
-#[cfg(feature = "sink")]
-use futures_sink::Sink;
 
 /// Stream for the [`inspect_ok`](super::TryStreamExt::inspect_ok) method.
 pub struct InspectOk<St, F>(Inspect<IntoStream<St>, InspectOkFn<F>>);
@@ -86,10 +84,12 @@ where
     }
 }
 
+#[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
 //
 // Optional Sink forwarding when feature = "sink"
 //
-#[cfg(feature = "sink")]
 impl<St, Item, F> Sink<Item> for InspectOk<St, F>
 where
     Inspect<IntoStream<St>, InspectOkFn<F>>: Sink<Item>,

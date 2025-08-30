@@ -1,6 +1,5 @@
 use super::into_stream::IntoFuseStream;
-use super::{FusedStream, TryStream};
-use core::fmt;
+use super::TryStream;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::future::{FusedFuture, Future};
@@ -33,7 +32,7 @@ where
     pub(super) fn new(stream: St, sink: Si) -> Self {
         Self {
             sink: Some(sink),
-            stream: Fuse::new(IntoStream::new(stream)),
+            stream: IntoFuseStream::new(stream),
             buffered_item: None,
         }
     }

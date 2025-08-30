@@ -2,9 +2,8 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
-use tokio_stream::{Stream, StreamExt};
+
+use tokio_stream::Stream;
 
 use super::IntoFuseStream;
 use crate::{FusedStream, TryStream};
@@ -17,8 +16,9 @@ pub struct TryReadyChunks<St> {
     cap: usize, // https://github.com/rust-lang/futures-rs/issues/1475
 }
 
-struct TryReadyChunksProj<'pin, St> {
+pub(super) struct TryReadyChunksProj<'pin, St> {
     stream: Pin<&'pin mut IntoFuseStream<St>>,
+    #[allow(dead_code)]
     cap: &'pin usize,
 }
 
@@ -121,8 +121,30 @@ where
     }
 }
 
-// Forwarding impl of Sink from the underlying stream
+/// Error indicating, that while chunk was collected inner stream produced an error.
+///
+/// Contains all items that were collected before an error occurred, and the stream error itself.
+#[derive(PartialEq, Eq)]
+pub struct TryReadyChunksError<T, E>(pub Vec<T>, pub E);
+
+impl<T, E: fmt::Debug> fmt::Debug for TryReadyChunksError<T, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.1.fmt(f)
+    }
+}
+
+impl<T, E: fmt::Display> fmt::Display for TryReadyChunksError<T, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.1.fmt(f)
+    }
+}
+
+impl<T, E: fmt::Debug + fmt::Display> core::error::Error for TryReadyChunksError<T, E> {}
+
 #[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
+// Forwarding impl of Sink from the underlying stream
 impl<St, Item> Sink<Item> for TryReadyChunks<St>
 where
     St: TryStream + Sink<Item>,
@@ -145,23 +167,3 @@ where
         unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_close(cx)
     }
 }
-
-/// Error indicating, that while chunk was collected inner stream produced an error.
-///
-/// Contains all items that were collected before an error occurred, and the stream error itself.
-#[derive(PartialEq, Eq)]
-pub struct TryReadyChunksError<T, E>(pub Vec<T>, pub E);
-
-impl<T, E: fmt::Debug> fmt::Debug for TryReadyChunksError<T, E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.1.fmt(f)
-    }
-}
-
-impl<T, E: fmt::Display> fmt::Display for TryReadyChunksError<T, E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.1.fmt(f)
-    }
-}
-
-impl<T, E: fmt::Debug + fmt::Display> core::error::Error for TryReadyChunksError<T, E> {}

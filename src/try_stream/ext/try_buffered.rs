@@ -6,8 +6,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::future::TryFuture;
 use futures_util::future::{IntoFuture, TryFutureExt};
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
+
 use tokio_stream::Stream;
 
 /// Stream for the [`try_buffered`](super::TryStreamExt::try_buffered) method.
@@ -23,6 +22,18 @@ where
     max: Option<NonZeroUsize>,
 }
 
+pub(crate) struct TryBufferedProj<'pin, St>
+where
+    St: TryStream,
+    St::Ok: TryFuture,
+{
+    stream: Pin<&'pin mut IntoFuseStream<St>>,
+    #[allow(dead_code)]
+    in_progress_queue: &'pin mut FuturesOrdered<IntoFuture<St::Ok>>,
+    #[allow(dead_code)]
+    max: &'pin Option<NonZeroUsize>,
+}
+
 impl<St> TryBuffered<St>
 where
     St: TryStream,
@@ -34,6 +45,57 @@ where
             in_progress_queue: FuturesOrdered::new(),
             max: n.and_then(NonZeroUsize::new),
         }
+    }
+
+    pub(crate) fn project(self: Pin<&mut Self>) -> TryBufferedProj<'_, St> {
+        unsafe {
+            let this = self.get_unchecked_mut();
+            TryBufferedProj {
+                stream: Pin::new_unchecked(&mut this.stream),
+                in_progress_queue: &mut this.in_progress_queue,
+                max: &this.max,
+            }
+        }
+    }
+
+    /// Acquires a pinned mutable reference to the underlying stream that this
+    /// combinator is pulling from.
+    pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut St> {
+        self.project().stream.get_pin_mut()
+    }
+
+    /// Acquires a reference to the underlying stream that this combinator is
+    /// pulling from.
+    pub fn get_ref(&self) -> &St {
+        self.stream.get_ref()
+    }
+
+    /// Acquires a mutable reference to the underlying stream that this
+    /// combinator is pulling from.
+    pub fn get_mut(&mut self) -> &mut St {
+        self.stream.get_mut()
+    }
+
+    /// Returns the number of chunk-generating futures that are currently
+    /// being queued and being polled.
+    pub fn len(&self) -> usize {
+        self.in_progress_queue.len()
+    }
+
+    /// Returns `true` if there are no chunk-generating futures currently
+    /// being queued and polled.
+    pub fn is_empty(&self) -> bool {
+        self.in_progress_queue.is_empty()
+    }
+}
+
+impl<St> FusedStream for TryBuffered<St>
+where
+    St: TryStream,
+    St::Ok: TryFuture<Error = St::Error>,
+{
+    fn is_terminated(&self) -> bool {
+        self.stream.is_terminated() && self.in_progress_queue.is_empty()
     }
 }
 
@@ -82,8 +144,10 @@ where
     }
 }
 
-// Forwarding impl of Sink from the underlying stream
 #[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
+// Forwarding impl of Sink from the underlying stream
 impl<S, Item, E> Sink<Item> for TryBuffered<S>
 where
     S: TryStream + Sink<Item, Error = E>,

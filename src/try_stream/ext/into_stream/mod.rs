@@ -4,8 +4,6 @@ pub(crate) use fused::IntoFuseStream;
 use super::{FusedStream, TryStream};
 use core::pin::Pin;
 use core::task::{Context, Poll};
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 /// Stream for the [`into_stream`](super::TryStreamExt::into_stream) method.
@@ -15,7 +13,8 @@ pub struct IntoStream<St> {
     stream: St,
 }
 
-struct IntoStreamProj<'pin, St> {
+#[allow(dead_code)]
+pub(crate) struct IntoStreamProj<'pin, St> {
     stream: Pin<&'pin mut St>,
 }
 
@@ -51,6 +50,7 @@ impl<St> IntoStream<St> {
         unsafe { self.map_unchecked_mut(|s| &mut s.stream) }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn project(self: Pin<&mut Self>) -> IntoStreamProj<'_, St> {
         unsafe {
             let this = self.get_unchecked_mut();
@@ -88,8 +88,10 @@ impl<St: TryStream> Stream for IntoStream<St> {
     }
 }
 
-// Forwarding impl of Sink from the underlying stream
 #[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
+// Forwarding impl of Sink from the underlying stream
 impl<St, Item> Sink<Item> for IntoStream<St>
 where
     St: Sink<Item>,
