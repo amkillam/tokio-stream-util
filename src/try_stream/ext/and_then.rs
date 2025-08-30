@@ -1,11 +1,11 @@
+use super::{FusedStream, TryStream};
 use core::fmt;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::future::TryFuture;
-use super::{FusedStream, TryStream};
-use tokio_stream::Stream;
 #[cfg(feature = "sink")]
 use tokio_sink::Sink;
+use tokio_stream::Stream;
 
 /// Stream for the [`and_then`](super::TryStreamExt::and_then) method.
 #[must_use = "streams do nothing unless polled"]
@@ -35,7 +35,11 @@ where
     Fut: TryFuture<Error = St::Error>,
 {
     pub(super) fn new(stream: St, f: F) -> Self {
-        Self { stream, future: None, f }
+        Self {
+            stream,
+            future: None,
+            f,
+        }
     }
 }
 
@@ -134,10 +138,7 @@ where
 {
     type Error = St::Error;
 
-    fn poll_ready(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_ready(cx)
     }
 
@@ -145,17 +146,11 @@ where
         unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.start_send(item)
     }
 
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_flush(cx)
     }
 
-    fn poll_close(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_close(cx)
     }
 }

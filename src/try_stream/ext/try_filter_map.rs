@@ -2,9 +2,9 @@ use core::fmt;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::future::TryFuture;
-use tokio_stream::Stream;
 #[cfg(feature = "sink")]
 use tokio_sink::Sink;
+use tokio_stream::Stream;
 
 use super::{FusedStream, TryStream};
 
@@ -32,7 +32,11 @@ where
 
 impl<St, Fut, F> TryFilterMap<St, Fut, F> {
     pub(super) fn new(stream: St, f: F) -> Self {
-        Self { stream, f, pending: None }
+        Self {
+            stream,
+            f,
+            pending: None,
+        }
     }
 
     /// Acquires a reference to the underlying stream that this combinator is

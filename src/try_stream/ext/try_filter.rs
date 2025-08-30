@@ -39,7 +39,12 @@ where
     // also don't have an implementation of `Drop`, nor manual `Unpin`.
     unsafe fn project(
         self: Pin<&mut Self>,
-    ) -> (Pin<&mut St>, &mut F, Pin<&mut Option<Fut>>, &mut Option<St::Ok>) {
+    ) -> (
+        Pin<&mut St>,
+        &mut F,
+        Pin<&mut Option<Fut>>,
+        &mut Option<St::Ok>,
+    ) {
         let this = self.get_unchecked_mut();
         (
             Pin::new_unchecked(&mut this.stream),
@@ -70,7 +75,12 @@ where
     St: TryStream,
 {
     pub(super) fn new(stream: St, f: F) -> Self {
-        Self { stream, f, pending_fut: None, pending_item: None }
+        Self {
+            stream,
+            f,
+            pending_fut: None,
+            pending_item: None,
+        }
     }
 
     /// Acquires a reference to the underlying stream that this combinator is

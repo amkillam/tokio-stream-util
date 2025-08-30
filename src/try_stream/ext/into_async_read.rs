@@ -31,7 +31,10 @@ where
     St::Ok: AsRef<[u8]>,
 {
     pub(super) fn new(stream: St) -> Self {
-        Self { stream, state: ReadState::PendingChunk }
+        Self {
+            stream,
+            state: ReadState::PendingChunk,
+        }
     }
 }
 
@@ -72,7 +75,10 @@ where
                     match result {
                         Some(Ok(chunk)) => {
                             if !chunk.as_ref().is_empty() {
-                                this.state = ReadState::Ready { chunk, chunk_start: 0 };
+                                this.state = ReadState::Ready {
+                                    chunk,
+                                    chunk_start: 0,
+                                };
                             }
                         }
                         Some(Err(err)) => {
@@ -127,7 +133,10 @@ where
             match stream.as_mut().try_poll_next(cx) {
                 Poll::Ready(Some(Ok(chunk))) => {
                     if !chunk.as_ref().is_empty() {
-                        this.state = ReadState::Ready { chunk, chunk_start: 0 };
+                        this.state = ReadState::Ready {
+                            chunk,
+                            chunk_start: 0,
+                        };
                     }
                 }
                 Poll::Ready(Some(Err(err))) => {
@@ -166,7 +175,10 @@ where
                 this.state = ReadState::PendingChunk;
             }
         } else {
-            debug_assert!(false, "Attempted to consume from IntoAsyncRead without chunk");
+            debug_assert!(
+                false,
+                "Attempted to consume from IntoAsyncRead without chunk"
+            );
         }
     }
 }

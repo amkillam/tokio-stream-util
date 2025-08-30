@@ -60,7 +60,11 @@ where
     F: FnMut(T) -> Fut,
     Fut: TryFuture<Ok = Option<(Item, T)>>,
 {
-    TryUnfold { f, state: Some(init), fut: None }
+    TryUnfold {
+        f,
+        state: Some(init),
+        fut: None,
+    }
 }
 
 /// Stream for the [`try_unfold`] function.
@@ -89,7 +93,10 @@ where
     Fut: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TryUnfold").field("state", &self.state).field("fut", &self.fut).finish()
+        f.debug_struct("TryUnfold")
+            .field("state", &self.state)
+            .field("fut", &self.fut)
+            .finish()
     }
 }
 
