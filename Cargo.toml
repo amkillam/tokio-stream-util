@@ -1,0 +1,24 @@
+[package]
+name = "tokio-stream-ext"
+version = "0.1.0"
+edition = "2018"
+authors = ["Adam Killam <adammkillam@gmail.com>"]
+description = "Extension traits for the tokio-stream crate"
+license = "MIT"
+repository = "https://github.com/amkillam/tokio-stream-ext"
+readme = "README.md"
+keywords = ["tokio", "stream", "asynchronous", "async"]
+categories = ["asynchronous", "network-programming", "data-structures"]
+homepage = "https://github.com/amkillam/tokio-stream-ext"
+documentation = "https://docs.rs/tokio-stream-ext"
+rust-version = "1.36"
+
+[features]
+default = ["std", "alloc"]
+std = []
+alloc = []
+
+[dependencies]
+tokio-stream = { version = "0.1.17", default-features = false, features = [
+  "io-util",
+] }

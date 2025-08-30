@@ -1,0 +1,4 @@
+contact_links:
+  - name: Question
+    url: https://github.com/amkillam/tokio-stream-ext/discussions
+    about: Questions about tokio-stream-ext should be posted as a GitHub discussion.
