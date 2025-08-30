@@ -1,6 +1,6 @@
 [package]
 name = "tokio-stream-util"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
 authors = ["Adam Killam <adammkillam@gmail.com>"]
 description = "Extension traits and utilities for tokio-stream's `Stream` trait."
