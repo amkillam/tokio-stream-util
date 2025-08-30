@@ -17,8 +17,13 @@ rust-version = "1.36"
 default = ["std", "alloc"]
 std = []
 alloc = []
+sync = ["dep:tokio", "tokio-stream/sync"]
 
 [dependencies]
 tokio-stream = { version = "0.1.17", default-features = false, features = [
   "io-util",
 ] }
+
+tokio = { version = "1.15.0", default-features = false, features = [
+  "sync",
+], optional = true }

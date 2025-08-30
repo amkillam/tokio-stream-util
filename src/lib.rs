@@ -19,3 +19,6 @@ mod r#try;
 
 pub use crate::fused::FusedStream;
 pub use crate::r#try::TryStream;
+
+#[cfg(feature = "sync")]
+pub mod sync;
