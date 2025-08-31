@@ -27,13 +27,13 @@ sync = ["dep:tokio", "tokio-stream/sync", "tokio-sink/sync"]
 portable-atomic = [
   "futures-core/portable-atomic",
   "futures-util/portable-atomic",
-  # "tokio-sink/portable-atomic",
+  "tokio-sink/portable-atomic",
 ]
 cfg-target-has-atomic = [
   "futures-core/cfg-target-has-atomic",
   "futures-task/cfg-target-has-atomic",
   "futures-util/cfg-target-has-atomic",
-  # "tokio-sink/cfg-target-has-atomic",
+  "tokio-sink/cfg-target-has-atomic",
 ]
 sink = ["dep:tokio-sink"]
 io = ["dep:tokio", "tokio-stream/io-util", "tokio/io-util"]
@@ -46,7 +46,7 @@ tokio = { version = "^1.15.0", default-features = false, features = [
   "sync",
 ], optional = true }
 futures-core = { version = "^0.3.31", default-features = false }
-tokio-sink = { version = "^0.1.0", default-features = false, path = "../tokio-sink", optional = true }
+tokio-sink = { version = "^0.1.0", default-features = false, optional = true }
 either = { version = "^1.15.0", default-features = false }
 futures-task = { version = "^0.3.31", default-features = false }
 futures-util = { version = "^0.3.31", default-features = false }
