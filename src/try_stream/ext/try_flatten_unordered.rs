@@ -2,6 +2,7 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use futures_core::ready;
 
 use either::Either;
 use tokio_stream::Stream;
@@ -9,40 +10,103 @@ use tokio_stream::Stream;
 use super::IntoStream;
 use super::{FusedStream, TryStream};
 use crate::flatten_unordered::{FlattenUnorderedWithFlowController, FlowController, FlowStep};
-use crate::try_stream::IntoFuseStream;
-use crate::TryStreamExt;
+use crate::{try_stream::IntoFuseStream, TryStreamExt};
+
+#[derive(Debug)]
+/// An enum to implement `Stream` for `either::Either`.
+pub enum EitherStream<L, R> {
+    Left(L),
+    Right(R),
+}
+
+impl<L: Unpin, R: Unpin> Unpin for EitherStream<L, R> {}
+
+impl<L, R> From<Either<L, R>> for EitherStream<L, R> {
+    fn from(e: Either<L, R>) -> Self {
+        match e {
+            Either::Left(l) => Self::Left(l),
+            Either::Right(r) => Self::Right(r),
+        }
+    }
+}
+
+impl<L, R> Stream for EitherStream<L, R>
+where
+    L: Stream + Unpin,
+    R: Stream<Item = L::Item> + Unpin,
+{
+    type Item = L::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        unsafe {
+            match self.get_unchecked_mut() {
+                EitherStream::Left(l) => Pin::new_unchecked(l).poll_next(cx),
+                EitherStream::Right(r) => Pin::new_unchecked(r).poll_next(cx),
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            EitherStream::Left(l) => l.size_hint(),
+            EitherStream::Right(r) => r.size_hint(),
+        }
+    }
+}
+
+impl<L, R> FusedStream for EitherStream<L, R>
+where
+    L: FusedStream + Unpin,
+    R: FusedStream<Item = L::Item> + Unpin,
+{
+    fn is_terminated(&self) -> bool {
+        match self {
+            EitherStream::Left(l) => l.is_terminated(),
+            EitherStream::Right(r) => r.is_terminated(),
+        }
+    }
+}
 
 /// Stream for the [`try_flatten_unordered`](super::TryStreamExt::try_flatten_unordered) method.
 #[must_use = "streams do nothing unless polled"]
-pub struct TryFlattenUnordered<St>
+pub struct TryFlattenUnordered<St: TryStream>
 where
-    NestedTryStreamIntoEitherTryStream<St>: Stream,
+    St::Ok: TryStream + Unpin,
+    <St as TryStream>::Ok: Stream,
+    <St::Ok as TryStream>::Error: From<St::Error>,
 {
     inner: FlattenUnorderedWithFlowController<
-        NestedTryStreamIntoEitherTryStream<St>,
+        NestedTryStreamIntoEither<St>,
         PropagateBaseStreamError<St>,
     >,
 }
 
-pub(crate) struct TryFlattenUnorderedProj<'pin, St>
+pub(crate) struct TryFlattenUnorderedProj<'pin, St: TryStream>
 where
-    NestedTryStreamIntoEitherTryStream<St>: Stream,
+    St::Ok: TryStream + Unpin,
+    <St as TryStream>::Ok: Stream,
+    <St::Ok as TryStream>::Error: From<St::Error>,
 {
     inner: Pin<
         &'pin mut FlattenUnorderedWithFlowController<
-            NestedTryStreamIntoEitherTryStream<St>,
+            NestedTryStreamIntoEither<St>,
             PropagateBaseStreamError<St>,
         >,
     >,
 }
 
-impl<St> Unpin for TryFlattenUnordered<St> where NestedTryStreamIntoEitherTryStream<St>: Stream {}
+impl<St: TryStream> Unpin for TryFlattenUnordered<St> where
+    St::Ok: TryStream + Unpin,
+    <St::Ok as TryStream>::Error: From<St::Error>
+{
+}
 
-impl<St> fmt::Debug for TryFlattenUnordered<St>
+impl<St: TryStream> fmt::Debug for TryFlattenUnordered<St>
 where
     St: fmt::Debug,
-    <NestedTryStreamIntoEitherTryStream<St> as Stream>::Item: Stream + fmt::Debug,
-    NestedTryStreamIntoEitherTryStream<St>: Stream + fmt::Debug,
+    St::Ok: TryStream + Unpin + fmt::Debug,
+    <St::Ok as TryStream>::Ok: fmt::Debug,
+    <St::Ok as TryStream>::Error: From<St::Error> + fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TryFlattenUnordered")
@@ -56,19 +120,10 @@ where
     St: TryStream,
     St::Ok: TryStream + Unpin,
     <St::Ok as TryStream>::Error: From<St::Error>,
-    FlattenUnorderedWithFlowController<
-        NestedTryStreamIntoEitherTryStream<St>,
-        PropagateBaseStreamError<St>,
-    >: Stream<Item = Result<<St::Ok as TryStream>::Ok, <St::Ok as TryStream>::Error>>,
-    Either<IntoStream<St::Ok>, SingleStreamResult<St::Ok>>:
-        Stream<Item = Result<<St::Ok as TryStream>::Ok, <St::Ok as TryStream>::Error>>,
 {
-    pub(super) fn new(stream: St, limit: impl Into<Option<usize>>) -> Self {
+    pub(super) fn new(stream: St, limit: Option<usize>) -> Self {
         Self {
-            inner: FlattenUnorderedWithFlowController::new(
-                NestedTryStreamIntoEitherTryStream::new(stream),
-                limit.into(),
-            ),
+            inner: FlattenUnorderedWithFlowController::new(NestedTryStreamIntoEither::new(stream), limit),
         }
     }
 
@@ -119,10 +174,6 @@ where
     St: TryStream,
     St::Ok: TryStream + Unpin,
     <St::Ok as TryStream>::Error: From<St::Error>,
-    FlattenUnorderedWithFlowController<
-        NestedTryStreamIntoEitherTryStream<St>,
-        PropagateBaseStreamError<St>,
-    >: Stream<Item = Result<<St::Ok as TryStream>::Ok, <St::Ok as TryStream>::Error>>,
 {
     type Item = Result<<St::Ok as TryStream>::Ok, <St::Ok as TryStream>::Error>;
 
@@ -140,14 +191,6 @@ where
     St: TryStream,
     St::Ok: TryStream + Unpin,
     <St::Ok as TryStream>::Error: From<St::Error>,
-    FlattenUnorderedWithFlowController<
-        NestedTryStreamIntoEitherTryStream<St>,
-        PropagateBaseStreamError<St>,
-    >: Stream<Item = Result<<St::Ok as TryStream>::Ok, <St::Ok as TryStream>::Error>>,
-    FlattenUnorderedWithFlowController<
-        NestedTryStreamIntoEitherTryStream<St>,
-        PropagateBaseStreamError<St>,
-    >: FusedStream,
 {
     fn is_terminated(&self) -> bool {
         self.inner.is_terminated()
@@ -159,25 +202,29 @@ impl<St, Item> Sink<Item> for TryFlattenUnordered<St>
 where
     St: TryStream + Sink<Item>,
     St::Ok: TryStream + Unpin,
-    <St::Ok as TryStream>::Error: From<St::Error>,
+    <St::Ok as TryStream>::Error: From<<St as TryStream>::Error>,
     <St as Sink<Item>>::Error: From<<St as TryStream>::Error>,
 {
     type Error = <St as Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) }.poll_ready(cx)
+        let inner = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) };
+        inner.poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) }.start_send(item)
+        let inner = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) };
+        inner.start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) }.poll_flush(cx)
+        let inner = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) };
+        inner.poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) }.poll_close(cx)
+        let inner = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) };
+        inner.poll_close(cx)
     }
 }
 
@@ -185,28 +232,15 @@ where
 /// This's a wrapper for `FlattenUnordered` to reuse its logic over `TryStream`.
 #[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
-pub struct NestedTryStreamIntoEitherTryStream<St> {
+pub struct NestedTryStreamIntoEither<St> {
     stream: IntoFuseStream<St>,
 }
 
-pub(crate) struct NestedTryStreamIntoEitherTryStreamProj<'pin, St>
-where
-    St: TryStream,
-    St::Ok: TryStream + Unpin,
-    <St::Ok as TryStream>::Error: From<St::Error>,
-{
+pub(crate) struct NestedTryStreamIntoEitherProj<'pin, St> {
     stream: Pin<&'pin mut IntoFuseStream<St>>,
 }
 
-impl<St> Unpin for NestedTryStreamIntoEitherTryStream<St>
-where
-    St: TryStream + Unpin,
-    St::Ok: TryStream + Unpin,
-    <St::Ok as TryStream>::Error: From<St::Error>,
-{
-}
-
-impl<St> NestedTryStreamIntoEitherTryStream<St>
+impl<St> NestedTryStreamIntoEither<St>
 where
     St: TryStream,
     St::Ok: TryStream + Unpin,
@@ -220,10 +254,10 @@ where
 
     pub(crate) fn project<'pin>(
         self: Pin<&'pin mut Self>,
-    ) -> NestedTryStreamIntoEitherTryStreamProj<'pin, St> {
+    ) -> NestedTryStreamIntoEitherProj<'pin, St> {
         unsafe {
             let this = self.get_unchecked_mut();
-            NestedTryStreamIntoEitherTryStreamProj {
+            NestedTryStreamIntoEitherProj {
                 stream: Pin::new_unchecked(&mut this.stream),
             }
         }
@@ -296,7 +330,7 @@ impl<T> Stream for Single<T> {
 #[derive(Debug, Clone, Copy)]
 pub struct PropagateBaseStreamError<St>(PhantomData<St>);
 
-type BaseStreamItem<St> = <NestedTryStreamIntoEitherTryStream<St> as Stream>::Item;
+type BaseStreamItem<St> = <NestedTryStreamIntoEither<St> as Stream>::Item;
 type InnerStreamItem<St> = <BaseStreamItem<St> as Stream>::Item;
 
 impl<St> FlowController<BaseStreamItem<St>, InnerStreamItem<St>> for PropagateBaseStreamError<St>
@@ -304,61 +338,57 @@ where
     St: TryStream,
     St::Ok: TryStream + Unpin,
     <St::Ok as TryStream>::Error: From<St::Error>,
-    Either<IntoStream<St::Ok>, SingleStreamResult<St::Ok>>:
-        Stream<Item = Result<<St::Ok as TryStream>::Ok, <St::Ok as TryStream>::Error>>,
 {
     fn next_step(item: BaseStreamItem<St>) -> FlowStep<BaseStreamItem<St>, InnerStreamItem<St>> {
         match item {
             // A new successful inner stream received
-            st @ Either::Left(_) => FlowStep::Continue(st),
+            st @ EitherStream::Left(_) => FlowStep::Continue(st),
             // An error encountered
-            Either::Right(mut err) => FlowStep::Return(err.next_immediate().unwrap()),
+            EitherStream::Right(mut err) => FlowStep::Return(err.next_immediate().unwrap()),
         }
     }
 }
 
-pub(crate) type SingleStreamResult<St> =
-    Single<Result<<St as TryStream>::Ok, <St as TryStream>::Error>>;
+pub(crate) type SingleStreamResult<Ok, Error> = Single<Result<Ok, Error>>;
 
-impl<St> Stream for NestedTryStreamIntoEitherTryStream<St>
+impl<St> Stream for NestedTryStreamIntoEither<St>
 where
     St: TryStream,
     St::Ok: TryStream + Unpin,
     <St::Ok as TryStream>::Error: From<St::Error>,
 {
     // Item is either an inner stream or a stream containing a single error.
-    // This will allow using `Either`'s `Stream` implementation as both branches are actually streams of `Result`'s.
-    type Item = Either<IntoStream<St::Ok>, SingleStreamResult<St::Ok>>;
+    // This will allow using `Either`'s `Stream` implementation as both branches are actually streams of
+    // `Result`'s.
+    type Item = EitherStream<
+        IntoStream<St::Ok>,
+        SingleStreamResult<<St::Ok as TryStream>::Ok, <St::Ok as TryStream>::Error>,
+    >;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
-        let item = match stream.try_poll_next(cx) {
-            Poll::Ready(x) => x,
-            Poll::Pending => return Poll::Pending,
-        };
+        let item = ready!(stream.try_poll_next(cx));
 
-        let out = match item {
-            Some(res) => match res {
+        Poll::Ready(item.map(|res| {
+            match res {
                 // Emit successful inner stream as is
                 Ok(stream) => Either::Left(stream.into_stream()),
                 // Wrap an error into a stream containing a single item
-                err @ Err(_) => {
-                    let res = err.map(|_: St::Ok| unreachable!()).map_err(Into::into);
-
-                    Either::Right(Single::new(res))
+                Err(e) => {
+                    let err: Result<<St::Ok as TryStream>::Ok, _> = Err(e.into());
+                    Either::Right(Single::new(err))
                 }
-            },
-            None => return Poll::Ready(None),
-        };
-
-        Poll::Ready(Some(out))
+            }
+            .into()
+        }))
     }
 }
 
-impl<St> FusedStream for NestedTryStreamIntoEitherTryStream<St>
+impl<St> FusedStream for NestedTryStreamIntoEither<St>
 where
-    NestedTryStreamIntoEitherTryStream<St>: Stream,
     St: TryStream,
+    St::Ok: TryStream + Unpin,
+    <St::Ok as TryStream>::Error: From<St::Error>,
 {
     fn is_terminated(&self) -> bool {
         self.stream.is_terminated()
@@ -369,7 +399,7 @@ where
 use tokio_sink::Sink;
 #[cfg(feature = "sink")]
 // Forwarding impl of Sink from the underlying stream
-impl<St, Item> Sink<Item> for NestedTryStreamIntoEitherTryStream<St>
+impl<St, Item> Sink<Item> for NestedTryStreamIntoEither<St>
 where
     St: TryStream + Sink<Item>,
     St::Ok: TryStream + Unpin,
@@ -378,18 +408,22 @@ where
     type Error = <St as Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_ready(cx)
+        let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
+        stream.get_pin_mut().poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.start_send(item)
+        let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
+        stream.get_pin_mut().start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_flush(cx)
+        let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
+        stream.get_pin_mut().poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_close(cx)
+        let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
+        stream.get_pin_mut().poll_close(cx)
     }
 }

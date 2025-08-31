@@ -30,32 +30,21 @@
 //! This type is similar to the `FuturesOrdered` type in the `futures`
 //! crate, but is adapted to work in the `tokio` ecosystem.
 //!! # Examples
-//!! ```
+//! ```
+//!
+//! use tokio_stream_util::FuturesOrdered;
 //! use tokio_stream::StreamExt;
-//! use tokio_util::futures_ordered::FuturesOrdered;
-//!! use std::time::Duration;
-//!! use tokio::time::sleep;
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let mut futures = FuturesOrdered::new();
-//!
-//!     futures.push_back(async {
-//!         sleep(Duration::from_millis(300)).await;
-//!         1
-//!     });
-//!     futures.push_back(async {
-//!         sleep(Duration::from_millis(100)).await;
-//!         2
-//!     });
-//!     futures.push_back(async {
-//!         sleep(Duration::from_millis(200)).await;
-//!         3
-//!     });
-//!
-//!     let results: Vec<_> = futures.collect().await;
-//!     assert_eq!(results, vec![1, 2, 3]);
+//! let mut futures = FuturesOrdered::new();
+//! futures.push_back(tokio::task::spawn(async move { 1 }));
+//! futures.push_back(tokio::task::spawn(async move { 2 }));
+//! assert_eq!(futures.len(), 2);
+//! assert_eq!(futures.is_empty(), false);
+//! assert_eq!(futures.next().await.unwrap().unwrap(), 1);
 //! }
+//!
 //! ```
 
 use crate::futures_unordered::FuturesUnordered;

@@ -51,7 +51,7 @@ where
 impl<St> Stream for TryBufferUnordered<St>
 where
     St: TryStream,
-    St::Ok: TryFuture<Error = St::Error>,
+    St::Ok: TryFuture<Error = <St as crate::try_stream::TryStream>::Error>,
 {
     type Item = Result<<St::Ok as TryFuture>::Ok, St::Error>;
 
@@ -101,23 +101,32 @@ use tokio_sink::Sink;
 impl<St, Item> Sink<Item> for TryBufferUnordered<St>
 where
     St: TryStream + Sink<Item>,
-    St::Ok: TryFuture<Error = St::Error>,
+    St::Ok: TryFuture<Error = <St as crate::try_stream::TryStream>::Error>,
 {
-    type Error = St::Error;
+    type Error = <St as tokio_sink::Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_ready(cx)
+        // Forward Sink to the underlying St via IntoFuseStream -> IntoStream -> St
+        let into_fuse = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
+        let st = into_fuse.get_pin_mut();
+        st.poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.start_send(item)
+        let into_fuse = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
+        let st = into_fuse.get_pin_mut();
+        st.start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_flush(cx)
+        let into_fuse = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
+        let st = into_fuse.get_pin_mut();
+        st.poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_close(cx)
+        let into_fuse = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
+        let st = into_fuse.get_pin_mut();
+        st.poll_close(cx)
     }
 }

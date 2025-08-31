@@ -1,20 +1,31 @@
-use super::Inspect;
-use crate::fns::{inspect_ok_fn, InspectOkFn};
 use crate::try_stream::IntoStream;
 
 use core::fmt;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-use futures_core::stream::FusedStream;
+use crate::{FusedStream, TryStream};
 
 /// Stream for the [`inspect_ok`](super::TryStreamExt::inspect_ok) method.
-pub struct InspectOk<St, F>(Inspect<IntoStream<St>, InspectOkFn<F>>);
+pub struct InspectOk<St, F> {
+    stream: IntoStream<St>,
+    f: F,
+}
 
-impl<St, F> InspectOk<St, F> {
+pub(crate) struct InspectOkProj<'pin, St: 'pin, F: 'pin> {
+    pub stream: Pin<&'pin mut IntoStream<St>>,
+    pub f: &'pin mut F,
+}
+
+impl<St, F> InspectOk<St, F>
+where
+    St: TryStream,
+    F: FnMut(&St::Ok),
+{
     /// Construct a new `InspectOk` wrapper.
     pub fn new(stream: St, f: F) -> Self {
-        InspectOk(Inspect::new(IntoStream::new(stream), inspect_ok_fn(f)))
+        let stream = IntoStream::new(stream);
+        Self { stream, f }
     }
 
     /// Return a mutable reference to the underlying original stream `St`.
@@ -22,22 +33,27 @@ impl<St, F> InspectOk<St, F> {
         // Map/Inspect public API provide get_mut that returns &mut inner stream.
         // First get mut reference to the inner `Inspect<IntoStream<St>, _>`,
         // then to the `IntoStream<St>`, then to `St`.
-        self.0.get_mut().get_mut()
+        self.stream.get_mut()
+    }
+
+    pub(crate) fn project<'pin>(self: Pin<&'pin mut Self>) -> InspectOkProj<'pin, St, F> {
+        unsafe {
+            let this = self.get_unchecked_mut();
+            InspectOkProj {
+                stream: Pin::new_unchecked(&mut this.stream),
+                f: &mut this.f,
+            }
+        }
     }
 
     /// Return a pinned mutable reference to the underlying original stream `St`.
     pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut St> {
-        // Project to Pin<&mut Map/Inspect>
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        // Map/Inspect have `get_pin_mut` returning `Pin<&mut IntoStream<St>>`
-        let into_pin = inner.get_pin_mut();
-        // IntoStream::get_pin_mut returns Pin<&mut St>
-        into_pin.get_pin_mut()
+        self.project().stream.get_pin_mut()
     }
 
     /// Consume wrapper and return the underlying original stream `St`.
     pub fn into_inner(self) -> St {
-        self.0.into_inner().into_inner()
+        self.stream.into_inner()
     }
 }
 
@@ -47,10 +63,12 @@ impl<St, F> InspectOk<St, F> {
 
 impl<St, F> fmt::Debug for InspectOk<St, F>
 where
-    Inspect<IntoStream<St>, InspectOkFn<F>>: fmt::Debug,
+    F: fmt::Debug,
+    St: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
+        fmt::Debug::fmt(&self.stream, f)?;
+        fmt::Debug::fmt(&self.f, f)
     }
 }
 
@@ -58,62 +76,73 @@ where
 // Stream + FusedStream delegations
 //
 
-impl<St, F> futures_core::stream::Stream for InspectOk<St, F>
+impl<St, F> tokio_stream::Stream for InspectOk<St, F>
 where
-    Inspect<IntoStream<St>, InspectOkFn<F>>: futures_core::stream::Stream,
+    St: TryStream,
+    F: FnMut(&<St as crate::try_stream::TryStream>::Ok),
 {
-    type Item = <Inspect<IntoStream<St>, InspectOkFn<F>> as futures_core::stream::Stream>::Item;
+    type Item = Result<St::Ok, St::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // Delegate to inner `Inspect<IntoStream<St>, _>`
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        inner.poll_next(cx)
+        let proj = self.project();
+        match proj.stream.poll_next(cx) {
+            Poll::Ready(Some(Ok(ok))) => {
+                (proj.f)(&ok);
+                Poll::Ready(Some(Ok(ok)))
+            }
+            Poll::Ready(Some(Err(err))) => Poll::Ready(Some(Err(err))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        self.stream.size_hint()
     }
 }
 
 impl<St, F> FusedStream for InspectOk<St, F>
 where
-    Inspect<IntoStream<St>, InspectOkFn<F>>: FusedStream,
+    St: TryStream,
+    F: FnMut(&St::Ok),
+    IntoStream<St>: FusedStream + tokio_stream::Stream,
 {
     fn is_terminated(&self) -> bool {
-        self.0.is_terminated()
+        self.stream.is_terminated()
     }
 }
 
 #[cfg(feature = "sink")]
 use tokio_sink::Sink;
 #[cfg(feature = "sink")]
-//
-// Optional Sink forwarding when feature = "sink"
-//
 impl<St, Item, F> Sink<Item> for InspectOk<St, F>
 where
-    Inspect<IntoStream<St>, InspectOkFn<F>>: Sink<Item>,
+    St: TryStream + Sink<Item>,
+    F: FnMut(&<St as crate::try_stream::TryStream>::Ok),
 {
-    type Error = <Inspect<IntoStream<St>, InspectOkFn<F>> as Sink<Item>>::Error;
+    type Error = <St as tokio_sink::Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        inner.poll_ready(cx)
+        let this = unsafe { self.get_unchecked_mut() };
+        let into_stream = unsafe { Pin::new_unchecked(&mut this.stream) };
+        into_stream.get_pin_mut().poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        // `start_send` does not require pin.
-        let this = unsafe { Pin::get_unchecked_mut(self) };
-        this.0.start_send(item)
+        let this = unsafe { self.get_unchecked_mut() };
+        let into_stream = unsafe { Pin::new_unchecked(&mut this.stream) };
+        into_stream.get_pin_mut().start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        inner.poll_flush(cx)
+        let this = unsafe { self.get_unchecked_mut() };
+        let into_stream = unsafe { Pin::new_unchecked(&mut this.stream) };
+        into_stream.get_pin_mut().poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        inner.poll_close(cx)
+        let this = unsafe { self.get_unchecked_mut() };
+        let into_stream = unsafe { Pin::new_unchecked(&mut this.stream) };
+        into_stream.get_pin_mut().poll_close(cx)
     }
 }

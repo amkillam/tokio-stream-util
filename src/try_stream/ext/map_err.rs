@@ -1,95 +1,131 @@
 use core::{
+    error::Error,
     fmt,
     pin::Pin,
     task::{Context, Poll},
 };
 
-use tokio_stream::{adapters::Map, StreamExt};
-
-use crate::{
-    fns::{map_err_fn, MapErrFn},
-    try_stream::IntoStream,
-    FusedStream, TryStream,
-};
+use crate::{try_stream::IntoStream, FusedStream, TryStream};
 
 /// Stream for the [`map_err`](super::TryStreamExt::map_err) method.
-pub struct MapErr<St, F>(Map<IntoStream<St>, MapErrFn<F>>);
+pub struct MapErr<St, E, F> {
+    stream: IntoStream<St>,
+    _err: core::marker::PhantomData<E>,
+    f: F,
+}
 
-impl<St, F> MapErr<St, F>
+pub(crate) struct MapErrProj<'pin, St: 'pin, F: 'pin> {
+    pub stream: Pin<&'pin mut IntoStream<St>>,
+    pub f: &'pin mut F,
+}
+
+impl<St, E, F> MapErr<St, E, F>
 where
-    St: TryStream + Unpin,
-    F: FnMut(St::Error) -> St::Error + FnOnce(St::Error) -> St::Error,
-    MapErrFn<F>: Unpin
-        + FnMut(Result<St::Ok, St::Error>) -> Result<St::Ok, St::Error>
-        + FnOnce(Result<St::Ok, St::Error>) -> Result<St::Ok, St::Error>,
+    St: TryStream,
+    E: Error,
+    F: FnMut(St::Error) -> E,
 {
     /// Creates a new `MapErr` combinator.
     pub fn new(stream: St, f: F) -> Self {
         let stream = IntoStream::new(stream);
-        MapErr(stream.map(map_err_fn(f)))
+        Self {
+            stream,
+            f,
+            _err: core::marker::PhantomData,
+        }
+    }
+
+    pub(crate) fn project<'pin>(self: Pin<&'pin mut Self>) -> MapErrProj<'pin, St, F> {
+        unsafe {
+            let this = self.get_unchecked_mut();
+            MapErrProj {
+                stream: Pin::new_unchecked(&mut this.stream),
+                f: &mut this.f,
+            }
+        }
     }
 }
 
-impl<St, F> fmt::Debug for MapErr<St, F>
+impl<St, E, F> fmt::Debug for MapErr<St, E, F>
 where
-    Map<IntoStream<St>, MapErrFn<F>>: fmt::Debug,
+    E: fmt::Debug,
+    St: fmt::Debug,
+    F: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
+        fmt::Debug::fmt(&self.stream, f)?;
+        fmt::Debug::fmt(&self._err, f)?;
+        fmt::Debug::fmt(&self.f, f)
     }
 }
 
-impl<St, F> futures_core::stream::Stream for MapErr<St, F>
+impl<St, E, F> tokio_stream::Stream for MapErr<St, E, F>
 where
-    Map<IntoStream<St>, MapErrFn<F>>: futures_core::stream::Stream,
+    E: Error,
+    St: TryStream + Unpin,
+    F: FnMut(St::Error) -> E,
 {
-    type Item = <Map<IntoStream<St>, MapErrFn<F>> as futures_core::stream::Stream>::Item;
+    type Item = Result<St::Ok, F::Output>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        inner.poll_next(cx)
+        let mut proj = self.project();
+        match proj.stream.as_mut().poll_next(cx) {
+            Poll::Ready(Some(Ok(ok))) => Poll::Ready(Some(Ok(ok))),
+            Poll::Ready(Some(Err(err))) => {
+                let new_err = (proj.f)(err);
+                Poll::Ready(Some(Err(new_err)))
+            }
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        self.stream.size_hint()
     }
 }
 
-impl<St, F> FusedStream for MapErr<St, F>
+impl<St, E, F> FusedStream for MapErr<St, E, F>
 where
-    Map<IntoStream<St>, MapErrFn<F>>: FusedStream,
+    St: TryStream + Unpin,
+    E: Error,
+    F: FnMut(St::Error) -> E,
+    IntoStream<St>: FusedStream,
 {
     fn is_terminated(&self) -> bool {
-        self.0.is_terminated()
+        self.stream.is_terminated()
     }
 }
 
 #[cfg(feature = "sink")]
 use tokio_sink::Sink;
 #[cfg(feature = "sink")]
-impl<St, Item, F> Sink<Item> for MapErr<St, F>
+impl<St, E, Item, F> Sink<Item> for MapErr<St, E, F>
 where
-    Map<IntoStream<St>, MapErrFn<F>>: Sink<Item>,
+    St: Sink<Item> + TryStream + Unpin,
+    <St as crate::try_stream::TryStream>::Error: Error,
+    E: Error,
+    F: FnMut(<St as crate::try_stream::TryStream>::Error) -> E,
 {
-    type Error = <Map<IntoStream<St>, MapErrFn<F>> as Sink<Item>>::Error;
+    type Error = <St as tokio_sink::Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        inner.poll_ready(cx)
+        let mut proj = self.project();
+        proj.stream.as_mut().get_pin_mut().poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        let this = unsafe { Pin::get_unchecked_mut(self) };
-        this.0.start_send(item)
+        let mut proj = self.project();
+        proj.stream.as_mut().get_pin_mut().start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        inner.poll_flush(cx)
+        let mut proj = self.project();
+        proj.stream.as_mut().get_pin_mut().poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut Pin::get_unchecked_mut(self).0) };
-        inner.poll_close(cx)
+        let mut proj = self.project();
+        proj.stream.as_mut().get_pin_mut().poll_close(cx)
     }
 }

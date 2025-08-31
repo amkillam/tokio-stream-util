@@ -26,8 +26,8 @@ impl<St, E> ErrInto<St, E> {
     /// Note that care must be taken to avoid tampering with the state of the
     /// stream which may otherwise confuse this combinator.
     ///
-    /// SAFETY: The returned reference is valid as long as `self` is
-    /// valid.
+    /// # SAFETY
+    /// The returned reference is valid as long as `self` is valid.
     pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut St> {
         // SAFETY: `stream` is pinned because it is inside a `Pin<ErrInto>`.
         unsafe { self.map_unchecked_mut(|s| &mut s.stream) }

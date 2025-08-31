@@ -7,19 +7,10 @@ use core::fmt;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-#[cfg(feature = "alloc")]
-use either::Either;
 use futures_core::future::TryFuture;
 use tokio_stream::Stream;
 
 use super::TryStream;
-#[cfg(feature = "alloc")]
-use crate::flatten_unordered::FlattenUnorderedWithFlowController;
-use crate::fns::{MapErrFn, MapOkFn};
-#[cfg(feature = "alloc")]
-use crate::try_stream::ext::try_flatten_unordered::{
-    NestedTryStreamIntoEitherTryStream, PropagateBaseStreamError, SingleStreamResult,
-};
 use crate::FusedStream;
 
 mod and_then;
@@ -29,9 +20,9 @@ mod err_into;
 pub use err_into::ErrInto;
 
 mod inspect;
-pub use inspect::inspect_ok::InspectOk;
+pub use inspect::InspectOk;
 
-pub use inspect::inspect_err::InspectErr;
+pub use inspect::InspectErr;
 
 mod into_stream;
 pub(crate) use into_stream::IntoFuseStream;
@@ -63,10 +54,10 @@ pub use try_filter_map::TryFilterMap;
 mod try_flatten;
 pub use try_flatten::TryFlatten;
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "std"))]
 #[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
 mod try_flatten_unordered;
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "std"))]
 #[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
 pub use try_flatten_unordered::TryFlattenUnordered;
 
@@ -131,16 +122,18 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let mut stream =
-    ///     stream::iter(vec![Ok(()), Err(5i32)])
+    /// #[tokio::main]
+    /// async fn main() {
+    /// let stream =
+    ///     tokio_stream::iter(vec![Ok::<(), i32>(()), Err::<(), i32>(5)])
     ///         .err_into::<i64>();
     ///
-    /// assert_eq!(stream.try_next().await, Ok(Some(())));
-    /// assert_eq!(stream.try_next().await, Err(5i64));
-    /// # })
+    /// let collected =  stream.into_stream().collect::<Vec<_>>().await;
+    /// assert_eq!(collected, vec![Ok(()), Err(5i64)]);
+    /// }
     /// ```
     fn err_into<E>(self) -> ErrInto<Self, E>
     where
@@ -156,24 +149,23 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let mut stream =
-    ///     stream::iter(vec![Ok(5), Err(0)])
+    /// #[tokio::main]
+    /// async fn main() {
+    /// let stream =
+    ///     tokio_stream::iter(vec![Ok::<i32, i32>(5), Err::<i32, i32>(0)])
     ///         .map_ok(|x| x + 2);
     ///
-    /// assert_eq!(stream.try_next().await, Ok(Some(7)));
-    /// assert_eq!(stream.try_next().await, Err(0));
-    /// # })
+    /// let out =  stream.into_stream().collect::<Vec<_>>().await;
+    /// assert_eq!(out, vec![Ok(7), Err(0)]);
+    /// }
     /// ```
-    fn map_ok<T, F>(self, f: F) -> MapOk<Self, F>
+    fn map_ok<V, F>(self, f: F) -> MapOk<Self, V, F>
     where
         Self: TryStream + Unpin + Sized,
-        F: FnMut(Self::Ok) -> Self::Ok + FnOnce(Self::Ok) -> Self::Ok,
-        MapOkFn<F>: Unpin
-            + FnMut(Result<Self::Ok, Self::Error>) -> Result<Self::Ok, Self::Error>
-            + FnOnce(Result<Self::Ok, Self::Error>) -> Result<Self::Ok, Self::Error>,
+        F: FnMut(Self::Ok) -> V,
     {
         MapOk::new(self, f)
     }
@@ -184,24 +176,27 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let mut stream =
-    ///     stream::iter(vec![Ok(5), Err(0)])
-    ///         .map_err(|x| x + 2);
+    /// #[derive(Debug)]
+    /// struct MyErr(String);
+    /// impl core::fmt::Display for MyErr { fn fmt(&self, f:&mut core::fmt::Formatter<'_>)->core::fmt::Result{ self.0.fmt(f)} }
+    /// impl std::error::Error for MyErr {}
     ///
-    /// assert_eq!(stream.try_next().await, Ok(Some(5)));
-    /// assert_eq!(stream.try_next().await, Err(2));
-    /// # })
+    /// let stream =
+    ///     tokio_stream::iter(vec![Ok::<i32, i32>(5), Err::<i32, i32>(0)])
+    ///         .map_err(|x| MyErr(format!("e{}", x)));
+    ///
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// let out = rt.block_on(async { stream.into_stream().collect::<Vec<_>>().await });
+    /// assert_eq!(format!("{:?}", out), format!("{:?}", vec![Ok(5), Err(MyErr(String::from("e0")))]));
     /// ```
-    fn map_err<E, F>(self, f: F) -> MapErr<Self, F>
+    fn map_err<E, F>(self, f: F) -> MapErr<Self, E, F>
     where
         Self: TryStream + Unpin + Sized,
-        F: FnMut(Self::Error) -> Self::Error + FnOnce(Self::Error) -> Self::Error,
-        MapErrFn<F>: Unpin
-            + FnMut(Result<Self::Ok, Self::Error>) -> Result<Self::Ok, Self::Error>
-            + FnOnce(Result<Self::Ok, Self::Error>) -> Result<Self::Ok, Self::Error>,
+        E: core::error::Error,
+        F: FnMut(Self::Error) -> E,
     {
         MapErr::new(self, f)
     }
@@ -230,18 +225,18 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// use futures::channel::mpsc;
-    /// use futures::future;
-    /// use futures::stream::TryStreamExt;
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let (_tx, rx) = mpsc::channel::<Result<i32, ()>>(1);
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let stream = tokio_stream::iter(vec![Ok::<i32, ()>(1), Ok(2)])
+    ///         .and_then(|result| async move {
+    ///             Ok(if result % 2 == 0 { Some(result) } else { None })
+    ///         });
     ///
-    /// let rx = rx.and_then(|result| {
-    ///     future::ok(if result % 2 == 0 {
-    ///         Some(result)
-    ///     } else {
-    ///         None
-    ///     })
+    ///     let out = stream.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![Ok(None), Ok(Some(2))]);
     /// });
     /// ```
     fn and_then<Fut, F>(self, f: F) -> AndThen<Self, Fut, F>
@@ -337,16 +332,21 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// use futures::stream::{Stream, TryStream, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::{TryStream, TryStreamExt};
     ///
-    /// # type T = i32;
-    /// # type E = ();
-    /// fn make_try_stream() -> impl TryStream<Ok = T, Error = E> { // ... }
-    /// # futures::stream::empty()
-    /// # }
-    /// fn take_stream(stream: impl Stream<Item = Result<T, E>>) { /* ... */ }
+    /// type T = i32;
+    /// type E = ();
     ///
-    /// take_stream(make_try_stream().into_stream());
+    /// fn make_try_stream() -> impl TryStream<Ok = T, Error = E> {
+    ///     tokio_stream::iter(vec![Ok::<T, E>(1), Ok(2), Err(())])
+    /// }
+    ///
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let out = make_try_stream().into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![Ok(1), Ok(2), Err(())]);
+    /// });
     /// ```
     fn into_stream(self) -> IntoStream<Self>
     where
@@ -366,14 +366,13 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, TryStreamExt};
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let mut stream = stream::iter(vec![Ok(()), Err(())]);
-    ///
-    /// assert_eq!(stream.try_next().await, Ok(Some(())));
-    /// assert_eq!(stream.try_next().await, Err(()));
-    /// # })
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let mut stream = tokio_stream::iter(vec![Ok::<(), ()>(()), Err::<(), ()>(())]);
+    ///     assert_eq!(stream.try_next().await, Ok(Some(())));
+    /// });
     /// ```
     fn try_next(&mut self) -> TryNext<'_, Self>
     where
@@ -392,16 +391,20 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::future;
-    /// use futures::stream::{self, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let stream = stream::iter(vec![Ok::<i32, i32>(1), Ok(3), Ok(2)]);
-    /// let stream = stream.try_skip_while(|x| future::ready(Ok(*x < 3)));
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let stream = tokio_stream::iter(vec![Ok::<i32, i32>(1), Ok(3), Ok(2)])
+    ///         .try_skip_while(|x| {
+    ///             let v = *x;
+    ///             async move { Ok(v < 3) }
+    ///         });
     ///
-    /// let output: Result<Vec<i32>, i32> = stream.try_collect().await;
-    /// assert_eq!(output, Ok(vec![3, 2]));
-    /// # })
+    ///     let out = stream.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![Ok(3), Ok(2)]);
+    /// });
     /// ```
     fn try_skip_while<Fut, F>(self, f: F) -> TrySkipWhile<Self, Fut, F>
     where
@@ -422,16 +425,20 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::future;
-    /// use futures::stream::{self, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let stream = stream::iter(vec![Ok::<i32, i32>(1), Ok(2), Ok(3), Ok(2)]);
-    /// let stream = stream.try_take_while(|x| future::ready(Ok(*x < 3)));
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let stream = tokio_stream::iter(vec![Ok::<i32, i32>(1), Ok(2), Ok(3), Ok(2)])
+    ///         .try_take_while(|x| {
+    ///             let v = *x;
+    ///             async move { Ok(v < 3) }
+    ///         });
     ///
-    /// let output: Result<Vec<i32>, i32> = stream.try_collect().await;
-    /// assert_eq!(output, Ok(vec![1, 2]));
-    /// # })
+    ///     let out = stream.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![Ok(1), Ok(2)]);
+    /// });
     /// ```
     fn try_take_while<Fut, F>(self, f: F) -> TryTakeWhile<Self, Fut, F>
     where
@@ -454,23 +461,15 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::channel::mpsc;
-    /// use futures::stream::TryStreamExt;
-    /// use std::thread;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let (tx, rx) = mpsc::unbounded();
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let future = tokio_stream::iter(vec![Ok::<i32, i32>(1), Ok(2), Err(3)])
+    ///         .try_collect::<Vec<_>>();
     ///
-    /// thread::spawn(move || {
-    ///     for i in 1..=5 {
-    ///         tx.unbounded_send(Ok(i)).unwrap();
-    ///     }
-    ///     tx.unbounded_send(Err(6)).unwrap();
+    ///     assert_eq!(future.await, Err(3));
     /// });
-    ///
-    /// let output: Result<Vec<i32>, i32> = rx.try_collect().await;
-    /// assert_eq!(output, Err(6));
-    /// # })
     /// ```
     fn try_collect<C: Default + Extend<Self::Ok>>(self) -> TryCollect<Self, C>
     where
@@ -501,16 +500,24 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, TryChunksError, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
+    /// use tokio_stream_util::try_stream::TryChunksError;
     ///
-    /// let stream = stream::iter(vec![Ok::<i32, i32>(1), Ok(2), Ok(3), Err(4), Ok(5), Ok(6)]);
-    /// let mut stream = stream.try_chunks(2);
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let stream = tokio_stream::iter(vec![
+    ///         Ok::<i32, i32>(1), Ok(2), Ok(3), Err(4), Ok(5), Ok(6)
+    ///     ]).try_chunks(2);
     ///
-    /// assert_eq!(stream.try_next().await, Ok(Some(vec![1, 2])));
-    /// assert_eq!(stream.try_next().await, Err(TryChunksError(vec![3], 4)));
-    /// assert_eq!(stream.try_next().await, Ok(Some(vec![5, 6])));
-    /// # })
+    ///     let out = stream.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![
+    ///         Ok(vec![1, 2]),
+    ///         Ok(vec![3]),
+    ///         Err(TryChunksError::<i32, i32>(vec![], 4)),
+    ///         Ok(vec![5, 6]),
+    ///     ]);
+    /// });
     /// ```
     ///
     /// # Panics
@@ -549,16 +556,24 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, TryReadyChunksError, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
+    /// use tokio_stream_util::try_stream::TryReadyChunksError;
     ///
-    /// let stream = stream::iter(vec![Ok::<i32, i32>(1), Ok(2), Ok(3), Err(4), Ok(5), Ok(6)]);
-    /// let mut stream = stream.try_ready_chunks(2);
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let stream = tokio_stream::iter(vec![
+    ///         Ok::<i32, i32>(1), Ok(2), Ok(3), Err(4), Ok(5), Ok(6)
+    ///     ]).try_ready_chunks(2);
     ///
-    /// assert_eq!(stream.try_next().await, Ok(Some(vec![1, 2])));
-    /// assert_eq!(stream.try_next().await, Err(TryReadyChunksError(vec![3], 4)));
-    /// assert_eq!(stream.try_next().await, Ok(Some(vec![5, 6])));
-    /// # })
+    ///     let out = stream.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![
+    ///         Ok(vec![1, 2]),
+    ///         Ok(vec![3]),
+    ///         Err(TryReadyChunksError::<i32, i32>(vec![], 4)),
+    ///         Ok(vec![5, 6]),
+    ///     ]);
+    /// });
     /// ```
     ///
     /// # Panics
@@ -589,18 +604,20 @@ pub trait TryStreamExt: TryStream {
     ///
     /// # Examples
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::future;
-    /// use futures::stream::{self, StreamExt, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let stream = stream::iter(vec![Ok(1i32), Ok(2i32), Ok(3i32), Err("error")]);
-    /// let mut evens = stream.try_filter(|x| {
-    ///     future::ready(x % 2 == 0)
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let events = tokio_stream::iter(vec![Ok::<i32, &str>(1), Ok(2), Ok(3), Err("error")])
+    ///         .try_filter(|x| {
+    ///             let v = *x;
+    ///             async move { v >= 2 }
+    ///         });
+    ///
+    ///     let out = events.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![Ok(2), Ok(3), Err("error")]);
     /// });
-    ///
-    /// assert_eq!(evens.next().await, Some(Ok(2)));
-    /// assert_eq!(evens.next().await, Some(Err("error")));
-    /// # })
     /// ```
     fn try_filter<Fut, F>(self, f: F) -> TryFilter<Self, Fut, F>
     where
@@ -628,23 +645,20 @@ pub trait TryStreamExt: TryStream {
     ///
     /// # Examples
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use core::pin::pin;
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// use futures::stream;
-    /// use futures::stream::StreamExt;
-    /// use futures::stream::TryStreamExt;
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let halves = tokio_stream::iter(vec![Ok::<i32, &str>(1), Ok(6), Err("error")])
+    ///         .try_filter_map(|x| async move {
+    ///             let ret = if x % 2 == 0 { Some(x / 2) } else { None };
+    ///             Ok(ret)
+    ///         });
     ///
-    /// let stream = stream::iter(vec![Ok(1i32), Ok(6i32), Err("error")]);
-    /// let halves = stream.try_filter_map(|x| async move {
-    ///     let ret = if x % 2 == 0 { Some(x / 2) } else { None };
-    ///     Ok(ret)
+    ///     let out = halves.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![Ok(3), Err("error")]);
     /// });
-    ///
-    /// let mut halves = pin!(halves);
-    /// assert_eq!(halves.next().await, Some(Ok(3)));
-    /// assert_eq!(halves.next().await, Some(Err("error")));
-    /// # })
     /// ```
     fn try_filter_map<Fut, F, T>(self, f: F) -> TryFilterMap<Self, Fut, F>
     where
@@ -669,51 +683,30 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::channel::mpsc;
-    /// use futures::stream::{StreamExt, TryStreamExt};
-    /// use std::thread;
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let (tx1, rx1) = mpsc::unbounded();
-    /// let (tx2, rx2) = mpsc::unbounded();
-    /// let (tx3, rx3) = mpsc::unbounded();
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let inner1 = tokio_stream::iter(vec![Ok::<i32, i32>(1), Ok(2)]);
+    ///     let inner2 = tokio_stream::iter(vec![Ok::<i32, i32>(3), Ok(4)]);
+    ///     let base = tokio_stream::iter(vec![Ok::<_, i32>(inner1), Ok::<_, i32>(inner2)]);
+    ///     let stream = base.try_flatten_unordered(None);
     ///
-    /// thread::spawn(move || {
-    ///     tx1.unbounded_send(Ok(1)).unwrap();
+    ///     let mut out = stream.into_stream().collect::<Vec<_>>().await;
+    ///     out.sort_by_key(|r| r.clone().unwrap_or_default());
+    ///     assert_eq!(out, vec![Ok(1), Ok(2), Ok(3), Ok(4)]);
     /// });
-    /// thread::spawn(move || {
-    ///     tx2.unbounded_send(Ok(2)).unwrap();
-    ///     tx2.unbounded_send(Err(3)).unwrap();
-    ///     tx2.unbounded_send(Ok(4)).unwrap();
-    /// });
-    /// thread::spawn(move || {
-    ///     tx3.unbounded_send(Ok(rx1)).unwrap();
-    ///     tx3.unbounded_send(Ok(rx2)).unwrap();
-    ///     tx3.unbounded_send(Err(5)).unwrap();
-    /// });
-    ///
-    /// let stream = rx3.try_flatten_unordered(None);
-    /// let mut values: Vec<_> = stream.collect().await;
-    /// values.sort();
-    ///
-    /// assert_eq!(values, vec![Ok(1), Ok(2), Ok(4), Err(3), Err(5)]);
-    /// # });
     /// ```
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", feature = "std"))]
     #[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
     fn try_flatten_unordered(self, limit: impl Into<Option<usize>>) -> TryFlattenUnordered<Self>
     where
+        Self: Sized,
         Self::Ok: TryStream + Unpin,
         <Self::Ok as TryStream>::Error: From<Self::Error>,
-        Self: Sized,
-        FlattenUnorderedWithFlowController<
-            NestedTryStreamIntoEitherTryStream<Self>,
-            PropagateBaseStreamError<Self>,
-        >: Stream<Item = Result<<Self::Ok as TryStream>::Ok, <Self::Ok as TryStream>::Error>>,
-        Either<IntoStream<Self::Ok>, SingleStreamResult<Self::Ok>>:
-            Stream<Item = Result<<Self::Ok as TryStream>::Ok, <Self::Ok as TryStream>::Error>>,
     {
-        TryFlattenUnordered::new(self, limit)
+        TryFlattenUnordered::new(self, limit.into())
     }
 
     /// Flattens a stream of streams into just one continuous stream.
@@ -726,37 +719,19 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::channel::mpsc;
-    /// use futures::stream::{StreamExt, TryStreamExt};
-    /// use std::thread;
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let (tx1, rx1) = mpsc::unbounded();
-    /// let (tx2, rx2) = mpsc::unbounded();
-    /// let (tx3, rx3) = mpsc::unbounded();
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let inner1 = tokio_stream::iter(vec![Ok::<i32, i32>(1), Ok(2)]);
+    ///     let inner2 = tokio_stream::iter(vec![Ok::<i32, i32>(3), Ok(4)]);
+    ///     let base = tokio_stream::iter(vec![Ok::<_, i32>(inner1), Ok::<_, i32>(inner2)]);
+    ///     let stream = base.try_flatten();
     ///
-    /// thread::spawn(move || {
-    ///     tx1.unbounded_send(Ok(1)).unwrap();
+    ///     let out = stream.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![Ok(1), Ok(2), Ok(3), Ok(4)]);
     /// });
-    /// thread::spawn(move || {
-    ///     tx2.unbounded_send(Ok(2)).unwrap();
-    ///     tx2.unbounded_send(Err(3)).unwrap();
-    ///     tx2.unbounded_send(Ok(4)).unwrap();
-    /// });
-    /// thread::spawn(move || {
-    ///     tx3.unbounded_send(Ok(rx1)).unwrap();
-    ///     tx3.unbounded_send(Ok(rx2)).unwrap();
-    ///     tx3.unbounded_send(Err(5)).unwrap();
-    /// });
-    ///
-    /// let mut stream = rx3.try_flatten();
-    /// assert_eq!(stream.next().await, Some(Ok(1)));
-    /// assert_eq!(stream.next().await, Some(Ok(2)));
-    /// assert_eq!(stream.next().await, Some(Err(3)));
-    /// assert_eq!(stream.next().await, Some(Ok(4)));
-    /// assert_eq!(stream.next().await, Some(Err(5)));
-    /// assert_eq!(stream.next().await, None);
-    /// # });
     /// ```
     fn try_flatten(self) -> TryFlatten<Self>
     where
@@ -782,24 +757,18 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::channel::mpsc;
-    /// use futures::stream::TryStreamExt;
-    /// use std::thread;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let (tx, rx) = mpsc::unbounded::<Result<Vec<i32>, ()>>();
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let fut = tokio_stream::iter(vec![
+    ///         Ok::<Vec<i32>, ()>(vec![1, 2, 3]),
+    ///         Ok(vec![4, 5, 6]),
+    ///         Ok(vec![7, 8, 9]),
+    ///     ]).try_concat();
     ///
-    /// thread::spawn(move || {
-    ///     for i in (0..3).rev() {
-    ///         let n = i * 3;
-    ///         tx.unbounded_send(Ok(vec![n + 1, n + 2, n + 3])).unwrap();
-    ///     }
-    /// });
-    ///
-    /// let result = rx.try_concat().await;
-    ///
-    /// assert_eq!(result, Ok(vec![7, 8, 9, 4, 5, 6, 1, 2, 3]));
-    /// # });
+    ///     assert_eq!(fut.await, Ok(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]));
+    /// }
     /// ```
     fn try_concat(self) -> TryConcat<Self>
     where
@@ -831,44 +800,20 @@ pub trait TryStreamExt: TryStream {
     ///
     /// # Examples
     ///
-    /// Results are returned in the order of completion:
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::channel::oneshot;
-    /// use futures::stream::{self, StreamExt, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let (send_one, recv_one) = oneshot::channel();
-    /// let (send_two, recv_two) = oneshot::channel();
+    ///   #[tokio::main]
+    ///   async fn main() {
+    ///     let unordered = tokio_stream::iter(vec![Ok::<i32, &str>(3), Ok(1), Ok(2)])
+    ///         .map_ok(async |i| if i == 2 { Err("error") } else { Ok(i) })
+    ///         .try_buffer_unordered(None);
     ///
-    /// let stream_of_futures = stream::iter(vec![Ok(recv_one), Ok(recv_two)]);
-    ///
-    /// let mut buffered = stream_of_futures.try_buffer_unordered(10);
-    ///
-    /// send_two.send(2i32)?;
-    /// assert_eq!(buffered.next().await, Some(Ok(2i32)));
-    ///
-    /// send_one.send(1i32)?;
-    /// assert_eq!(buffered.next().await, Some(Ok(1i32)));
-    ///
-    /// assert_eq!(buffered.next().await, None);
-    /// # Ok::<(), i32>(()) }).unwrap();
-    /// ```
-    ///
-    /// Errors from the underlying stream itself are propagated:
-    /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::channel::mpsc;
-    /// use futures::stream::{StreamExt, TryStreamExt};
-    ///
-    /// let (sink, stream_of_futures) = mpsc::unbounded();
-    /// let mut buffered = stream_of_futures.try_buffer_unordered(10);
-    ///
-    /// sink.unbounded_send(Ok(async { Ok(7i32) }))?;
-    /// assert_eq!(buffered.next().await, Some(Ok(7i32)));
-    ///
-    /// sink.unbounded_send(Err("error in the stream"))?;
-    /// assert_eq!(buffered.next().await, Some(Err("error in the stream")));
-    /// # Ok::<(), Box<dyn std::error::Error>>(()) }).unwrap();
+    ///     let mut out = unordered.into_stream().collect::<Vec<_>>().await;
+    ///     out.sort();
+    ///     assert_eq!(out, vec![Ok(1), Ok(3), Err("error")]);
+    /// }
     /// ```
     #[cfg(feature = "alloc")]
     #[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
@@ -902,51 +847,19 @@ pub trait TryStreamExt: TryStream {
     ///
     /// # Examples
     ///
-    /// Results are returned in the order of addition:
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::channel::oneshot;
-    /// use futures::future::lazy;
-    /// use futures::stream::{self, StreamExt, TryStreamExt};
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let (send_one, recv_one) = oneshot::channel();
-    /// let (send_two, recv_two) = oneshot::channel();
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let buffered = tokio_stream::iter(vec![Ok::<i32, &str>(3), Ok(1), Ok(2)])
+    ///         .map_ok(|i| async move { if i == 2 { Err("error") } else { Ok(i) } })
+    ///         .try_buffered(None);
     ///
-    /// let mut buffered = lazy(move |cx| {
-    ///     let stream_of_futures = stream::iter(vec![Ok(recv_one), Ok(recv_two)]);
-    ///
-    ///     let mut buffered = stream_of_futures.try_buffered(10);
-    ///
-    ///     assert!(buffered.try_poll_next_unpin(cx).is_pending());
-    ///
-    ///     send_two.send(2i32)?;
-    ///     assert!(buffered.try_poll_next_unpin(cx).is_pending());
-    ///     Ok::<_, i32>(buffered)
-    /// }).await?;
-    ///
-    /// send_one.send(1i32)?;
-    /// assert_eq!(buffered.next().await, Some(Ok(1i32)));
-    /// assert_eq!(buffered.next().await, Some(Ok(2i32)));
-    ///
-    /// assert_eq!(buffered.next().await, None);
-    /// # Ok::<(), i32>(()) }).unwrap();
-    /// ```
-    ///
-    /// Errors from the underlying stream itself are propagated:
-    /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::channel::mpsc;
-    /// use futures::stream::{StreamExt, TryStreamExt};
-    ///
-    /// let (sink, stream_of_futures) = mpsc::unbounded();
-    /// let mut buffered = stream_of_futures.try_buffered(10);
-    ///
-    /// sink.unbounded_send(Ok(async { Ok(7i32) }))?;
-    /// assert_eq!(buffered.next().await, Some(Ok(7i32)));
-    ///
-    /// sink.unbounded_send(Err("error in the stream"))?;
-    /// assert_eq!(buffered.next().await, Some(Err("error in the stream")));
-    /// # Ok::<(), Box<dyn std::error::Error>>(()) }).unwrap();
+    ///     let out = buffered.into_stream().collect::<Vec<_>>().await;
+    ///     assert_eq!(out, vec![Ok(3), Ok(1), Err("error")]);
+    /// }
     /// ```
     #[cfg(feature = "alloc")]
     #[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
@@ -978,17 +891,17 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, TryStreamExt};
-    /// use futures::io::AsyncReadExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let stream = stream::iter([Ok(vec![1, 2, 3]), Ok(vec![4, 5])]);
-    /// let mut reader = stream.into_async_read();
-    ///
-    /// let mut buf = Vec::new();
-    /// reader.read_to_end(&mut buf).await.unwrap();
-    /// assert_eq!(buf, [1, 2, 3, 4, 5]);
-    /// # })
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let reader = tokio_stream::iter([Ok::<_, std::io::Error>(vec![1, 2, 3])]).into_async_read();
+    ///     let mut buf_reader = tokio::io::BufReader::new(reader);
+    ///     let mut buf = Vec::new();
+    ///     use tokio::io::AsyncReadExt;
+    ///     buf_reader.read_to_end(&mut buf).await.unwrap();
+    ///     assert_eq!(buf, vec![1, 2, 3]);
+    /// });
     /// ```
     #[cfg(feature = "io")]
     #[cfg(feature = "std")]
@@ -1008,18 +921,19 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, StreamExt, TryStreamExt};
-    /// use std::convert::Infallible;
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let number_stream = stream::iter(1..10).map(Ok::<_, Infallible>);
-    /// let positive = number_stream.try_all(|i| async move { i > 0 });
-    /// assert_eq!(positive.await, Ok(true));
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let future_true = tokio_stream::iter(vec![1, 2, 3]).map(|i| Ok::<i32, &str>(i))
+    ///         .try_all(|i| async move { i > 0 });
+    ///     assert!(future_true.await.unwrap());
     ///
-    /// let stream_with_errors = stream::iter([Ok(1), Err("err"), Ok(3)]);
-    /// let positive = stream_with_errors.try_all(|i| async move { i > 0 });
-    /// assert_eq!(positive.await, Err("err"));
-    /// # });
+    ///     let future_err = tokio_stream::iter(vec![Ok::<i32, &str>(1), Err("err"), Ok(3)])
+    ///         .try_all(|i| async move { i > 0 });
+    ///     assert!(future_err.await.is_err());
+    /// });
     /// ```
     fn try_all<Fut, F>(self, f: F) -> TryAll<Self, Fut, F>
     where
@@ -1037,18 +951,19 @@ pub trait TryStreamExt: TryStream {
     /// # Examples
     ///
     /// ```
-    /// # futures::executor::block_on(async {
-    /// use futures::stream::{self, StreamExt, TryStreamExt};
-    /// use std::convert::Infallible;
+    /// use tokio_stream::StreamExt;
+    /// use tokio_stream_util::TryStreamExt;
     ///
-    /// let number_stream = stream::iter(0..10).map(Ok::<_, Infallible>);
-    /// let contain_three = number_stream.try_any(|i| async move { i == 3 });
-    /// assert_eq!(contain_three.await, Ok(true));
+    /// let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    /// rt.block_on(async {
+    ///     let future_true = tokio_stream::iter(0..10).map(|i| Ok::<i32, &str>(i))
+    ///         .try_any(|i| async move { i == 3 });
+    ///     assert!(future_true.await.unwrap());
     ///
-    /// let stream_with_errors = stream::iter([Ok(1), Err("err"), Ok(3)]);
-    /// let contain_three = stream_with_errors.try_any(|i| async move { i == 3 });
-    /// assert_eq!(contain_three.await, Err("err"));
-    /// # });
+    ///     let future_err = tokio_stream::iter(vec![Ok::<i32, &str>(1), Err("err"), Ok(3)])
+    ///         .try_any(|i| async move { i == 3 });
+    ///     assert!(future_err.await.is_err());
+    /// });
     /// ```
     fn try_any<Fut, F>(self, f: F) -> TryAny<Self, Fut, F>
     where

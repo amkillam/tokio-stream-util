@@ -6,22 +6,42 @@
 //! //! ! without adding it to the inner streams bucket.
 //!
 //! # Examples
-//! ```rust
-//! use futures_util::stream::{self, StreamExt};
-//! use tokio::runtime::Runtime;
+//! ```
+//! use tokio_stream::StreamExt;
+//! use tokio_stream_util::FlattenUnordered;
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!    let stream_of_streams = stream::iter(vec![
-//!     stream::iter(vec![1, 2, 3]),
-//!     stream::iter(vec![4, 5, 6]),
-//!     stream::iter(vec![7, 8, 9]),
-//!     ]);
-//!     let mut flattened = stream_of_streams.flatten_unordered();
-//!     while let Some(item) = flattened.next().await {
-//!     println!("{}", item);
-//!     }
+//!  let unordered_stream = tokio_stream::iter(vec![
+//!    tokio_stream::iter(vec![1, 2, 3]),
+//!    tokio_stream::iter(vec![4, 5, 6]),
+//!    tokio_stream::iter(vec![7, 8, 9]),
+//!    tokio_stream::iter(vec![10, 11, 12]),
+//!    tokio_stream::iter(vec![13, 14, 15]),
+//!    tokio_stream::iter(vec![16, 17, 18]),
+//!    tokio_stream::iter(vec![19, 20, 21]),
+//!    tokio_stream::iter(vec![22, 23, 24]),
+//!    tokio_stream::iter(vec![25, 26, 27]),
+//!    tokio_stream::iter(vec![28, 29, 30]),
+//!    ]);
+//!    let mut stream = FlattenUnordered::new(unordered_stream, Some(3));
+//!    let mut expected_finds = std::collections::HashMap::new();
+//!    for i in 1..=30 {
+//!    expected_finds.insert(i, false);
+//!    }
+//!
+//!
+//!    while let Some(item) = stream.next().await {
+//!     assert!(item >= 1 && item <= 30);
+//!     *expected_finds.get_mut(&item).unwrap() = true;
+//!    }
+//!
+//!    for (key, found) in expected_finds {
+//!    assert!(found, "Item {} was not found in the stream", key);
+//!    }
 //! }
+//!
+//! ```
 //!
 
 use alloc::sync::Arc;
@@ -374,7 +394,8 @@ where
     Fc: FlowController<St::Item, <St::Item as Stream>::Item>,
     St::Item: Stream + Unpin,
 {
-    pub(crate) fn new(stream: St, limit: Option<usize>) -> Self {
+    /// Creates a new `FlattenUnorderedWithFlowController` stream.
+    pub fn new(stream: St, limit: Option<usize>) -> Self {
         let poll_state = SharedPollState::new(NEED_TO_POLL_STREAM);
 
         Self {

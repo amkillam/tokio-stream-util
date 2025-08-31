@@ -9,28 +9,46 @@ use super::IntoFuseStream;
 use crate::{FusedStream, TryStream};
 
 /// Stream for the [`try_ready_chunks`](super::TryStreamExt::try_ready_chunks) method.
-#[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
-pub struct TryReadyChunks<St> {
+pub struct TryReadyChunks<St: TryStream> {
     stream: IntoFuseStream<St>,
     cap: usize, // https://github.com/rust-lang/futures-rs/issues/1475
+    pending_error: Option<<St as TryStream>::Error>,
 }
 
-pub(super) struct TryReadyChunksProj<'pin, St> {
+impl<St> fmt::Debug for TryReadyChunks<St>
+where
+    St: TryStream + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TryReadyChunks")
+            .field("stream", &self.stream)
+            .field("cap", &self.cap)
+            .finish()
+    }
+}
+
+pub(super) struct TryReadyChunksProj<'pin, St: TryStream> {
     stream: Pin<&'pin mut IntoFuseStream<St>>,
     #[allow(dead_code)]
     cap: &'pin usize,
+    #[allow(dead_code)]
+    pending_error: &'pin mut Option<<St as TryStream>::Error>,
 }
 
 impl<St: TryStream + Unpin> Unpin for TryReadyChunks<St> {}
 
-impl<St> TryReadyChunks<St> {
+impl<St> TryReadyChunks<St>
+where
+    St: TryStream,
+{
     pub(super) fn new(stream: St, capacity: usize) -> Self {
         assert!(capacity > 0);
 
         Self {
             stream: IntoFuseStream::new(stream),
             cap: capacity,
+            pending_error: None,
         }
     }
 
@@ -40,6 +58,7 @@ impl<St> TryReadyChunks<St> {
             TryReadyChunksProj {
                 stream: Pin::new_unchecked(&mut this.stream),
                 cap: &this.cap,
+                pending_error: &mut this.pending_error,
             }
         }
     }
@@ -56,6 +75,9 @@ where
     type Item = Result<Vec<St::Ok>, TryReadyChunksStreamError<St>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(err) = unsafe { self.as_mut().get_unchecked_mut() }.pending_error.take() {
+            return Poll::Ready(Some(Err(TryReadyChunksError(Vec::new(), err))));
+        }
         let cap = self.cap;
         let mut items: Vec<St::Ok> = Vec::new();
 
@@ -87,7 +109,14 @@ where
 
                 // break the already collected items and the error.
                 Poll::Ready(Some(Err(e))) => {
-                    return Poll::Ready(Some(Err(TryReadyChunksError(items, e))));
+                    if items.is_empty() {
+                        return Poll::Ready(Some(Err(TryReadyChunksError(items, e))));
+                    } else {
+                        // stash the error and yield the buffered items first
+                        let this = unsafe { self.as_mut().get_unchecked_mut() };
+                        this.pending_error = Some(e);
+                        return Poll::Ready(Some(Ok(items)));
+                    }
                 }
 
                 // Since the underlying stream ran out of values, break what we
@@ -152,18 +181,23 @@ where
     type Error = <St as Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_ready(cx)
+        // Forward Sink calls to the underlying St via IntoFuseStream::get_pin_mut()
+        let stream = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
+        stream.get_pin_mut().poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.start_send(item)
+        let stream = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
+        stream.get_pin_mut().start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_flush(cx)
+        let stream = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
+        stream.get_pin_mut().poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_close(cx)
+        let stream = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
+        stream.get_pin_mut().poll_close(cx)
     }
 }

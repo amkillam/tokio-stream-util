@@ -13,12 +13,26 @@ use super::IntoFuseStream;
 use super::{FusedStream, TryStream};
 
 /// Stream for the [`try_chunks`](super::TryStreamExt::try_chunks) method.
-#[derive(Debug)]
 #[must_use = "streams do nothing unless polled"]
 pub struct TryChunks<St: TryStream> {
     stream: IntoFuseStream<St>,
     items: Vec<St::Ok>,
     cap: usize,
+    pending_error: Option<St::Error>,
+}
+
+impl<St> fmt::Debug for TryChunks<St>
+where
+    St: TryStream + fmt::Debug,
+    St::Ok: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TryChunks")
+            .field("stream", &self.stream)
+            .field("items", &self.items)
+            .field("cap", &self.cap)
+            .finish()
+    }
 }
 
 struct TryChunksProj<'pin, St: TryStream> {
@@ -39,6 +53,7 @@ impl<St: TryStream> TryChunks<St> {
             stream: IntoFuseStream::new(stream),
             items: Vec::with_capacity(capacity),
             cap: capacity,
+            pending_error: None,
         }
     }
 
@@ -98,6 +113,9 @@ impl<St: TryStream> Stream for TryChunks<St> {
     type Item = Result<Vec<St::Ok>, TryChunksStreamError<St>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(err) = unsafe { self.as_mut().get_unchecked_mut() }.pending_error.take() {
+            return Poll::Ready(Some(Err(TryChunksError(Vec::new(), err))));
+        }
         loop {
             let this = self.as_mut();
             let stream = this.project().stream;
@@ -115,8 +133,14 @@ impl<St: TryStream> Stream for TryChunks<St> {
                 }
                 Poll::Ready(Some(Err(e))) => {
                     let this = unsafe { self.as_mut().get_unchecked_mut() };
-                    let items = mem::replace(&mut this.items, Vec::with_capacity(this.cap));
-                    break Poll::Ready(Some(Err(TryChunksError(items, e))));
+                    if this.items.is_empty() {
+                        break Poll::Ready(Some(Err(TryChunksError(Vec::new(), e))));
+                    } else {
+                        // stash error and yield the buffered items first
+                        this.pending_error = Some(e);
+                        let items = mem::replace(&mut this.items, Vec::with_capacity(this.cap));
+                        break Poll::Ready(Some(Ok(items)));
+                    }
                 }
 
                 // Since the underlying stream ran out of values, break what we
@@ -170,19 +194,19 @@ where
     type Error = <St as Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_ready(cx)
+        self.get_pin_mut().poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.start_send(item)
+        self.get_pin_mut().start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_flush(cx)
+        self.get_pin_mut().poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_close(cx)
+        self.get_pin_mut().poll_close(cx)
     }
 }
 

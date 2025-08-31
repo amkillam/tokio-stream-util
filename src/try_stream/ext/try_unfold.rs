@@ -32,28 +32,29 @@ use super::FusedStream;
 /// # Example
 ///
 /// ```
-/// # #[derive(Debug, PartialEq)]
-/// # struct SomeError;
-/// # futures::executor::block_on(async {
-/// use futures::stream::{self, TryStreamExt};
+/// use tokio_stream::StreamExt;
 ///
-/// let stream = stream::try_unfold(0, |state| async move {
-///     if state < 0 {
-///         return Err(SomeError);
-///     }
+/// #[derive(Debug, PartialEq)]
+/// struct SomeError;
 ///
-///     if state <= 2 {
-///         let next_state = state + 1;
-///         let yielded = state * 2;
-///         Ok(Some((yielded, next_state)))
-///     } else {
-///         Ok(None)
-///     }
-/// });
+///  #[tokio::main]
+///  async fn main() {
+///     let stream = tokio_stream_util::try_stream::try_unfold(0, |state| async move {
+///         if state < 0 {
+///             return Err(SomeError);
+///         }
 ///
-/// let result: Result<Vec<i32>, _> = stream.try_collect().await;
-/// assert_eq!(result, Ok(vec![0, 2, 4]));
-/// # });
+///         if state <= 2 {
+///             let next_state = state + 1;
+///             let yielded = state * 2;
+///             Ok(Some((yielded, next_state)))
+///         } else {
+///             Ok(None)
+///         }
+///     });
+///
+///     assert_eq!(stream.collect::<Vec<_>>().await, vec![Ok(0), Ok(2), Ok(4)]);
+/// }
 /// ```
 pub fn try_unfold<T, F, Fut, Item>(init: T, f: F) -> TryUnfold<T, F, Fut>
 where
