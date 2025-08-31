@@ -45,11 +45,6 @@ pub use try_next::TryNext;
 mod try_filter;
 pub use try_filter::TryFilter;
 
-#[cfg(all(feature = "sink", feature = "alloc"))]
-mod try_forward;
-#[cfg(all(feature = "sink", feature = "alloc"))]
-pub use try_forward::TryForward;
-
 mod try_filter_map;
 pub use try_filter_map::TryFilterMap;
 
@@ -274,27 +269,6 @@ pub trait TryStreamExt: TryStream {
         Self: Sized,
     {
         OrElse::new(self, f)
-    }
-
-    /// A future that completes after the given stream has been fully processed
-    /// into the sink and the sink has been flushed and closed.
-    ///
-    /// This future will drive the stream to keep producing items until it is
-    /// exhausted, sending each item to the sink. It will complete once the
-    /// stream is exhausted, the sink has received and flushed all items, and
-    /// the sink is closed. Note that neither the original stream nor provided
-    /// sink will be output by this future. Pass the sink by `Pin<&mut S>`
-    /// (for example, via `try_forward(&mut sink)` inside an `async` fn/block) in
-    /// order to preserve access to the `Sink`. If the stream produces an error,
-    /// that error will be returned by this future without flushing/closing the sink.
-    #[cfg(all(feature = "sink", feature = "alloc"))]
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "sink", feature = "alloc"))))]
-    fn try_forward<S>(self, sink: S) -> TryForward<Self, S>
-    where
-        S: tokio_sink::Sink<Self::Ok, Error = Self::Error>,
-        Self: Sized,
-    {
-        TryForward::new(self, sink)
     }
 
     /// Do something with the success value of this stream, afterwards passing

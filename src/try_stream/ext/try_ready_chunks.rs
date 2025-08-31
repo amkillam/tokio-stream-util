@@ -172,35 +172,3 @@ impl<T, E: fmt::Display> fmt::Display for TryReadyChunksError<T, E> {
 }
 
 impl<T, E: fmt::Debug + fmt::Display> core::error::Error for TryReadyChunksError<T, E> {}
-
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
-#[cfg(feature = "sink")]
-// Forwarding impl of Sink from the underlying stream
-impl<St, Item> Sink<Item> for TryReadyChunks<St>
-where
-    St: TryStream + Sink<Item>,
-{
-    type Error = <St as Sink<Item>>::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // Forward Sink calls to the underlying St via IntoFuseStream::get_pin_mut()
-        let stream = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
-        stream.get_pin_mut().poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        let stream = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
-        stream.get_pin_mut().start_send(item)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let stream = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
-        stream.get_pin_mut().poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let stream = unsafe { self.map_unchecked_mut(|s| &mut s.stream) };
-        stream.get_pin_mut().poll_close(cx)
-    }
-}

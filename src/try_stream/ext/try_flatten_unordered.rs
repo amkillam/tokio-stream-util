@@ -201,37 +201,6 @@ where
     }
 }
 
-#[cfg(feature = "sink")]
-impl<St, Item> Sink<Item> for TryFlattenUnordered<St>
-where
-    St: TryStream + Sink<Item>,
-    St::Ok: TryStream + Unpin,
-    <St::Ok as TryStream>::Error: From<<St as TryStream>::Error>,
-    <St as Sink<Item>>::Error: From<<St as TryStream>::Error>,
-{
-    type Error = <St as Sink<Item>>::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) };
-        inner.poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        let inner = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) };
-        inner.start_send(item)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) };
-        inner.poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let inner = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) };
-        inner.poll_close(cx)
-    }
-}
-
 /// Emits either successful streams or single-item streams containing the underlying errors.
 /// This's a wrapper for `FlattenUnordered` to reuse its logic over `TryStream`.
 #[derive(Debug)]
@@ -396,38 +365,5 @@ where
 {
     fn is_terminated(&self) -> bool {
         self.stream.is_terminated()
-    }
-}
-
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
-#[cfg(feature = "sink")]
-// Forwarding impl of Sink from the underlying stream
-impl<St, Item> Sink<Item> for NestedTryStreamIntoEither<St>
-where
-    St: TryStream + Sink<Item>,
-    St::Ok: TryStream + Unpin,
-    <St::Ok as TryStream>::Error: From<<St as TryStream>::Error>,
-{
-    type Error = <St as Sink<Item>>::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
-        stream.get_pin_mut().poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
-        stream.get_pin_mut().start_send(item)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
-        stream.get_pin_mut().poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let stream = unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) };
-        stream.get_pin_mut().poll_close(cx)
     }
 }

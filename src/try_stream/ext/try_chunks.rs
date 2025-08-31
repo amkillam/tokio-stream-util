@@ -4,8 +4,6 @@ use core::mem;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 use super::IntoFuseStream;
@@ -185,31 +183,6 @@ impl<St: TryStream> Stream for TryChunks<St> {
 impl<St: TryStream> FusedStream for TryChunks<St> {
     fn is_terminated(&self) -> bool {
         self.stream.is_terminated() && self.items.is_empty()
-    }
-}
-
-// Forwarding impl of Sink from the underlying stream
-#[cfg(feature = "sink")]
-impl<St, Item> Sink<Item> for TryChunks<St>
-where
-    St: TryStream + Sink<Item>,
-{
-    type Error = <St as Sink<Item>>::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.get_pin_mut().poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        self.get_pin_mut().start_send(item)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.get_pin_mut().poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.get_pin_mut().poll_close(cx)
     }
 }
 

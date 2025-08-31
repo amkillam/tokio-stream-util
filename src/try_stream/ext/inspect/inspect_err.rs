@@ -106,38 +106,3 @@ where
         self.stream.is_terminated()
     }
 }
-
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
-#[cfg(feature = "sink")]
-impl<St, Item, F> Sink<Item> for InspectErr<St, F>
-where
-    St: TryStream + Sink<Item>,
-    F: FnMut(&<St as crate::try_stream::TryStream>::Error),
-{
-    type Error = <St as tokio_sink::Sink<Item>>::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let this = unsafe { self.get_unchecked_mut() };
-        let into_stream = unsafe { Pin::new_unchecked(&mut this.stream) };
-        into_stream.get_pin_mut().poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        let this = unsafe { self.get_unchecked_mut() };
-        let into_stream = unsafe { Pin::new_unchecked(&mut this.stream) };
-        into_stream.get_pin_mut().start_send(item)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let this = unsafe { self.get_unchecked_mut() };
-        let into_stream = unsafe { Pin::new_unchecked(&mut this.stream) };
-        into_stream.get_pin_mut().poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let this = unsafe { self.get_unchecked_mut() };
-        let into_stream = unsafe { Pin::new_unchecked(&mut this.stream) };
-        into_stream.get_pin_mut().poll_close(cx)
-    }
-}

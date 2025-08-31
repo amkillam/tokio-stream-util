@@ -2,8 +2,6 @@ use core::fmt;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::future::TryFuture;
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 use super::{FusedStream, TryStream};
@@ -171,31 +169,5 @@ where
 {
     fn is_terminated(&self) -> bool {
         self.pending_item.is_none() && self.stream.is_terminated()
-    }
-}
-
-// Forwarding impl of Sink from the underlying stream
-#[cfg(feature = "sink")]
-impl<St, Fut, F, Item, E> Sink<Item> for TrySkipWhile<St, Fut, F>
-where
-    St: TryStream + Sink<Item, Error = E>,
-    Fut: TryFuture,
-{
-    type Error = E;
-
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_ready(cx)
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.start_send(item)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        unsafe { self.map_unchecked_mut(|s| &mut s.stream) }.poll_close(cx)
     }
 }
