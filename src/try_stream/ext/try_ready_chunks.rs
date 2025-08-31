@@ -75,7 +75,10 @@ where
     type Item = Result<Vec<St::Ok>, TryReadyChunksStreamError<St>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if let Some(err) = unsafe { self.as_mut().get_unchecked_mut() }.pending_error.take() {
+        if let Some(err) = unsafe { self.as_mut().get_unchecked_mut() }
+            .pending_error
+            .take()
+        {
             return Poll::Ready(Some(Err(TryReadyChunksError(Vec::new(), err))));
         }
         let cap = self.cap;

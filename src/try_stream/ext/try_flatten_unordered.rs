@@ -95,9 +95,10 @@ where
     >,
 }
 
-impl<St: TryStream> Unpin for TryFlattenUnordered<St> where
+impl<St: TryStream> Unpin for TryFlattenUnordered<St>
+where
     St::Ok: TryStream + Unpin,
-    <St::Ok as TryStream>::Error: From<St::Error>
+    <St::Ok as TryStream>::Error: From<St::Error>,
 {
 }
 
@@ -123,7 +124,10 @@ where
 {
     pub(super) fn new(stream: St, limit: Option<usize>) -> Self {
         Self {
-            inner: FlattenUnorderedWithFlowController::new(NestedTryStreamIntoEither::new(stream), limit),
+            inner: FlattenUnorderedWithFlowController::new(
+                NestedTryStreamIntoEither::new(stream),
+                limit,
+            ),
         }
     }
 
