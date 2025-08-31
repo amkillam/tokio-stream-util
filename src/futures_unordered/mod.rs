@@ -32,7 +32,7 @@ use ready_to_run_queue::{Dequeue, ReadyToRunQueue};
 
 /// A set of futures which may complete in any order.
 ///
-/// See [`FuturesOrdered`](crate::stream::FuturesOrdered) for a version of this
+/// See [`FuturesOrdered`](crate::FuturesOrdered) for a version of this
 /// type that preserves a FIFO order.
 ///
 /// This structure is optimized to manage a large number of futures.

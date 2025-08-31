@@ -385,7 +385,7 @@ pub trait TryStreamExt: TryStream {
     /// resolves to `true`.
     ///
     /// This function is similar to
-    /// [`StreamExt::skip_while`](crate::stream::StreamExt::skip_while) but exits
+    /// [`StreamExt::skip_while`](tokio_stream::stream::StreamExt::skip_while) but exits
     /// early if an error occurs.
     ///
     /// # Examples
@@ -419,7 +419,7 @@ pub trait TryStreamExt: TryStream {
     /// resolves to `true`.
     ///
     /// This function is similar to
-    /// [`StreamExt::take_while`](crate::stream::StreamExt::take_while) but exits
+    /// [`StreamExt::take_while`](tokio_stream::stream::StreamExt::take_while) but exits
     /// early if an error occurs.
     ///
     /// # Examples
@@ -494,7 +494,7 @@ pub trait TryStreamExt: TryStream {
     /// library is activated, and it is activated by default.
     ///
     /// This function is similar to
-    /// [`StreamExt::chunks`](crate::stream::StreamExt::chunks) but exits
+    /// [`StreamExt::chunks`](tokio_stream::stream::StreamExt::chunks) but exits
     /// early if an error occurs.
     ///
     /// # Examples
@@ -550,7 +550,7 @@ pub trait TryStreamExt: TryStream {
     /// library is activated, and it is activated by default.
     ///
     /// This function is similar to
-    /// [`StreamExt::ready_chunks`](crate::stream::StreamExt::ready_chunks) but exits
+    /// [`StreamExt::ready_chunks`](tokio_stream::stream::StreamExt::ready_chunks) but exits
     /// early if an error occurs.
     ///
     /// # Examples
@@ -749,9 +749,9 @@ pub trait TryStreamExt: TryStream {
     /// the subsequent successful results of the stream. If the stream is empty,
     /// the default value will be returned.
     ///
-    /// Works with all collections that implement the [`Extend`](std::iter::Extend) trait.
+    /// Works with all collections that implement the [`Extend`](core::iter::Extend) trait.
     ///
-    /// This method is similar to [`concat`](crate::stream::StreamExt::concat), but will
+    /// This method is similar to [`concat`](tokio_stream::stream::StreamExt::concat), but will
     /// exit early if an error is encountered in the stream.
     ///
     /// # Examples
