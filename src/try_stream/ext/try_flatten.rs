@@ -3,7 +3,8 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 
 use super::{FusedStream, TryStream};
-
+#[cfg(feature = "sink")]
+use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 /// Stream for the [`try_flatten`](super::TryStreamExt::try_flatten) method.
@@ -141,5 +142,30 @@ where
                 }
             }
         })
+    }
+}
+
+// Forwarding impl of Sink from the underlying stream
+#[cfg(feature = "sink")]
+impl<S, Item> Sink<Item> for TryFlatten<S>
+where
+    S: TryStream + Sink<Item>,
+{
+    type Error = <S as Sink<Item>>::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_ready(cx)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
+        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.start_send(item)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().stream) }.poll_close(cx)
     }
 }

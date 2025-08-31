@@ -143,3 +143,31 @@ where
         }
     }
 }
+
+#[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
+// Forwarding impl of Sink from the underlying stream
+impl<S, Item, E> Sink<Item> for TryBuffered<S>
+where
+    S: TryStream + Sink<Item, Error = E>,
+    S::Ok: TryFuture<Error = E>,
+{
+    type Error = E;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.get_pin_mut().poll_ready(cx)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
+        self.get_pin_mut().start_send(item)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.get_pin_mut().poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.get_pin_mut().poll_close(cx)
+    }
+}

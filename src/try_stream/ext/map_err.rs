@@ -96,3 +96,36 @@ where
         self.stream.is_terminated()
     }
 }
+
+#[cfg(feature = "sink")]
+use tokio_sink::Sink;
+#[cfg(feature = "sink")]
+impl<St, E, Item, F> Sink<Item> for MapErr<St, E, F>
+where
+    St: Sink<Item> + TryStream + Unpin,
+    <St as crate::try_stream::TryStream>::Error: Error,
+    E: Error,
+    F: FnMut(<St as crate::try_stream::TryStream>::Error) -> E,
+{
+    type Error = <St as tokio_sink::Sink<Item>>::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut proj = self.project();
+        proj.stream.as_mut().get_pin_mut().poll_ready(cx)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
+        let mut proj = self.project();
+        proj.stream.as_mut().get_pin_mut().start_send(item)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut proj = self.project();
+        proj.stream.as_mut().get_pin_mut().poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut proj = self.project();
+        proj.stream.as_mut().get_pin_mut().poll_close(cx)
+    }
+}

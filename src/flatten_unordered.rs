@@ -59,6 +59,8 @@ use core::{
 
 use crate::FusedStream;
 use futures_task::{waker, ArcWake};
+#[cfg(feature = "sink")]
+use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 use crate::FuturesUnordered;
@@ -633,5 +635,83 @@ where
 
             Poll::Pending
         }
+    }
+}
+
+// Forwarding impl of Sink from the underlying stream
+#[cfg(feature = "sink")]
+impl<St, Item, Fc> Sink<Item> for FlattenUnorderedWithFlowController<St, Fc>
+where
+    St: Stream + Sink<Item>,
+{
+    type Error = St::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // project and delegate to inner stream
+        let this = unsafe {
+            let s: *mut FlattenUnorderedWithFlowController<St, Fc> = Pin::get_unchecked_mut(self);
+            FlattenUnorderedWithFlowControllerProj {
+                inner_streams: Pin::new_unchecked(&mut (*s).inner_streams),
+                stream: Pin::new_unchecked(&mut (*s).stream),
+                poll_state: &mut (*s).poll_state,
+                limit: &mut (*s).limit,
+                is_stream_done: &mut (*s).is_stream_done,
+                inner_streams_waker: &mut (*s).inner_streams_waker,
+                stream_waker: &mut (*s).stream_waker,
+                flow_controller: &mut (*s).flow_controller,
+            }
+        };
+        this.stream.poll_ready(cx)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), Self::Error> {
+        let this = unsafe {
+            let s: *mut FlattenUnorderedWithFlowController<St, Fc> = Pin::get_unchecked_mut(self);
+            FlattenUnorderedWithFlowControllerProj {
+                inner_streams: Pin::new_unchecked(&mut (*s).inner_streams),
+                stream: Pin::new_unchecked(&mut (*s).stream),
+                poll_state: &mut (*s).poll_state,
+                limit: &mut (*s).limit,
+                is_stream_done: &mut (*s).is_stream_done,
+                inner_streams_waker: &mut (*s).inner_streams_waker,
+                stream_waker: &mut (*s).stream_waker,
+                flow_controller: &mut (*s).flow_controller,
+            }
+        };
+        this.stream.start_send(item)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = unsafe {
+            let s: *mut FlattenUnorderedWithFlowController<St, Fc> = Pin::get_unchecked_mut(self);
+            FlattenUnorderedWithFlowControllerProj {
+                inner_streams: Pin::new_unchecked(&mut (*s).inner_streams),
+                stream: Pin::new_unchecked(&mut (*s).stream),
+                poll_state: &mut (*s).poll_state,
+                limit: &mut (*s).limit,
+                is_stream_done: &mut (*s).is_stream_done,
+                inner_streams_waker: &mut (*s).inner_streams_waker,
+                stream_waker: &mut (*s).stream_waker,
+                flow_controller: &mut (*s).flow_controller,
+            }
+        };
+        this.stream.poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = unsafe {
+            let s: *mut FlattenUnorderedWithFlowController<St, Fc> = Pin::get_unchecked_mut(self);
+            FlattenUnorderedWithFlowControllerProj {
+                inner_streams: Pin::new_unchecked(&mut (*s).inner_streams),
+                stream: Pin::new_unchecked(&mut (*s).stream),
+                poll_state: &mut (*s).poll_state,
+                limit: &mut (*s).limit,
+                is_stream_done: &mut (*s).is_stream_done,
+                inner_streams_waker: &mut (*s).inner_streams_waker,
+                stream_waker: &mut (*s).stream_waker,
+                flow_controller: &mut (*s).flow_controller,
+            }
+        };
+        this.stream.poll_close(cx)
     }
 }
