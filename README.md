@@ -2,6 +2,8 @@
 
 Extension traits and utilities for [tokio-stream](https://docs.rs/tokio-stream)'s `Stream` trait.
 
+These are largely equivalent to those from the [futures-util](https://docs.rs/futures-util) crate, adapted for the tokio ecosystem.
+
 [![Crates.io][crates-badge]][crates-url]
 [![MIT licensed][mit-badge]][mit-url]
 [![Build Status][actions-badge]][actions-url]
