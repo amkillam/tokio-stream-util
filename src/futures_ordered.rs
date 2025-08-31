@@ -181,6 +181,14 @@ pub struct FuturesOrdered<T: Future> {
     next_outgoing_index: i64,
 }
 
+pub(crate) struct FuturesOrderedProj<'pin, T: Future> {
+    in_progress_queue: Pin<&'pin mut FuturesUnordered<Ordered<T>>>,
+    queued_outputs: &'pin mut BinaryHeap<Ordered<T::Output>>,
+    #[allow(dead_code)]
+    next_incoming_index: &'pin mut i64,
+    next_outgoing_index: &'pin mut i64,
+}
+
 impl<T: Future> Unpin for FuturesOrdered<T> {}
 
 impl<Fut: Future> FuturesOrdered<Fut> {
@@ -210,6 +218,18 @@ impl<Fut: Future> FuturesOrdered<Fut> {
     /// Returns `true` if the queue contains no futures
     pub fn is_empty(&self) -> bool {
         self.in_progress_queue.is_empty() && self.queued_outputs.is_empty()
+    }
+
+    pub(crate) fn project(self: Pin<&mut Self>) -> FuturesOrderedProj<'_, Fut> {
+        unsafe {
+            let this = self.get_unchecked_mut();
+            FuturesOrderedProj {
+                in_progress_queue: Pin::new_unchecked(&mut this.in_progress_queue),
+                queued_outputs: &mut this.queued_outputs,
+                next_incoming_index: &mut this.next_incoming_index,
+                next_outgoing_index: &mut this.next_outgoing_index,
+            }
+        }
     }
 
     /// Push a future into the queue.
@@ -264,28 +284,29 @@ impl<Fut: Future> Default for FuturesOrdered<Fut> {
 impl<Fut: Future> Stream for FuturesOrdered<Fut> {
     type Item = Fut::Output;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = &mut *self;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self.project();
 
         // Check to see if we've already received the next value
         if let Some(next_output) = this.queued_outputs.peek_mut() {
-            if next_output.index == this.next_outgoing_index {
-                this.next_outgoing_index += 1;
+            if next_output.index == *this.next_outgoing_index {
+                *this.next_outgoing_index += 1;
                 return Poll::Ready(Some(PeekMut::pop(next_output).data));
             }
         }
 
         loop {
-            match Pin::new(&mut this.in_progress_queue).poll_next(cx) {
+            match this.in_progress_queue.as_mut().poll_next(cx) {
                 Poll::Ready(Some(output)) => {
-                    if output.index == this.next_outgoing_index {
-                        this.next_outgoing_index += 1;
-                        return Poll::Ready(Some(output.data));
+                    if output.index == *this.next_outgoing_index {
+                        *this.next_outgoing_index += 1;
+                        break Poll::Ready(Some(output.data));
                     } else {
                         this.queued_outputs.push(output)
                     }
                 }
-                _ => return Poll::Ready(None),
+                Poll::Pending => break Poll::Pending,
+                Poll::Ready(None) => break Poll::Ready(None),
             }
         }
     }
