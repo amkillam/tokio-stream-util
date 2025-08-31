@@ -1,7 +1,7 @@
 use super::TryStream;
-use std::marker::PhantomData;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use core::marker::PhantomData;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 use tokio_stream::Stream;
 
 /// Stream for the [`err_into`](super::TryStreamExt::err_into) method.

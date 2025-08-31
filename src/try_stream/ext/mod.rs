@@ -3,12 +3,10 @@
 //! This module contains a number of functions for working with `Streams`s
 //! that return `Result`s, allowing for short-circuiting computations.
 
-use core::fmt;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::future::TryFuture;
-use tokio_stream::Stream;
 
 use super::TryStream;
 use crate::FusedStream;
@@ -25,7 +23,11 @@ pub use inspect::InspectOk;
 pub use inspect::InspectErr;
 
 mod into_stream;
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
 pub(crate) use into_stream::IntoFuseStream;
+
 pub use into_stream::IntoStream;
 
 mod map_ok;
@@ -43,9 +45,9 @@ pub use try_next::TryNext;
 mod try_filter;
 pub use try_filter::TryFilter;
 
-#[cfg(feature = "sink")]
+#[cfg(all(feature = "sink", feature = "alloc"))]
 mod try_forward;
-#[cfg(feature = "sink")]
+#[cfg(all(feature = "sink", feature = "alloc"))]
 pub use try_forward::TryForward;
 
 mod try_filter_map;
@@ -182,7 +184,7 @@ pub trait TryStreamExt: TryStream {
     /// #[derive(Debug)]
     /// struct MyErr(String);
     /// impl core::fmt::Display for MyErr { fn fmt(&self, f:&mut core::fmt::Formatter<'_>)->core::fmt::Result{ self.0.fmt(f)} }
-    /// impl std::error::Error for MyErr {}
+    /// impl core::error::Error for MyErr {}
     ///
     /// let stream =
     ///     tokio_stream::iter(vec![Ok::<i32, i32>(5), Err::<i32, i32>(0)])
@@ -285,8 +287,8 @@ pub trait TryStreamExt: TryStream {
     /// (for example, via `try_forward(&mut sink)` inside an `async` fn/block) in
     /// order to preserve access to the `Sink`. If the stream produces an error,
     /// that error will be returned by this future without flushing/closing the sink.
-    #[cfg(feature = "sink")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "sink")))]
+    #[cfg(all(feature = "sink", feature = "alloc"))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "sink", feature = "alloc"))))]
     fn try_forward<S>(self, sink: S) -> TryForward<Self, S>
     where
         S: tokio_sink::Sink<Self::Ok, Error = Self::Error>,
@@ -526,7 +528,7 @@ pub trait TryStreamExt: TryStream {
     #[cfg(feature = "alloc")]
     fn try_chunks(self, capacity: usize) -> TryChunks<Self>
     where
-        <IntoFuseStream<Self> as Stream>::Item: fmt::Debug,
+        <IntoFuseStream<Self> as tokio_stream::Stream>::Item: core::fmt::Debug,
         Self: Sized,
     {
         TryChunks::new(self, capacity)

@@ -15,12 +15,13 @@ extern crate alloc;
 extern crate std;
 
 pub mod fused;
-pub mod futures_ordered;
 pub mod try_stream;
 
 pub use crate::fused::FusedStream;
 pub use crate::try_stream::{TryStream, TryStreamExt};
 
+#[cfg(feature = "alloc")]
+pub mod futures_ordered;
 #[cfg(feature = "alloc")]
 pub use futures_ordered::FuturesOrdered;
 

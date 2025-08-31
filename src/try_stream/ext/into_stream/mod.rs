@@ -1,4 +1,8 @@
+#[cfg(feature = "alloc")]
+#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
 pub(crate) mod fused;
+#[cfg(feature = "alloc")]
+#[cfg_attr(target_os = "none", cfg(target_has_atomic = "ptr"))]
 pub(crate) use fused::IntoFuseStream;
 
 use super::{FusedStream, TryStream};
