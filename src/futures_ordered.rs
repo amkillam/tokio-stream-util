@@ -1,35 +1,35 @@
 //! An unbounded queue of futures which yields results in submission order.
-//!! This is similar to `FuturesUnordered`, but imposes a FIFO order on top of
-//!! the set of futures.
-//!!
-//!! Futures are pushed into this queue and their realized values are yielded in
-//!! order. This structure is optimized to manage a large number of futures.
-//!! Futures managed by `FuturesOrdered` will only be polled when they generate
-//!! notifications. This reduces the required amount of work needed to coordinate
-//!! large numbers of futures.
-//!!
-//!! When a `FuturesOrdered` is first created, it does not contain any futures.
-//!! Calling `poll_next` in this state will result in `Poll::Ready(None)`
-//!! to be returned. Futures are submitted to the queue using `push_back` (or
-//!! `push_front`); however, the future will **not** be polled at this point.
-//!! `FuturesOrdered` will only poll managed futures when `poll_next` is called.
-//!! As such, it is important to call `poll_next` after pushing new futures.
-//!! If `poll_next` returns `Poll::Ready(None)` this means that the queue is
-//!! currently not managing any futures. A future may be submitted to the queue
-//!! at a later time. At that point, a call to `poll_next` will either
-//!! return the future's resolved value **or** `Poll::Pending` if the future has
-//!! not yet completed. When multiple futures are submitted to the queue,
-//!! `poll_next` will return `Poll::Pending` until the first future completes, even if
-//!! some of the later futures have already completed.
-//!! Note that you can create a ready-made `FuturesOrdered` via the
-//!! `collect` method, or you can start with an empty queue with the
-//!! `FuturesOrdered::new` constructor.
-//!! This type is only available when the `std` or `alloc` feature of this
-//!! library is activated, and it is activated by default.
+//! This is similar to `FuturesUnordered`, but imposes a FIFO order on top of
+//! the set of futures.
+//!
+//! Futures are pushed into this queue and their realized values are yielded in
+//! order. This structure is optimized to manage a large number of futures.
+//! Futures managed by `FuturesOrdered` will only be polled when they generate
+//! notifications. This reduces the required amount of work needed to coordinate
+//! large numbers of futures.
+//!
+//! When a `FuturesOrdered` is first created, it does not contain any futures.
+//! Calling `poll_next` in this state will result in `Poll::Ready(None)`
+//! to be returned. Futures are submitted to the queue using `push_back` (or
+//! `push_front`); however, the future will **not** be polled at this point.
+//! `FuturesOrdered` will only poll managed futures when `poll_next` is called.
+//! As such, it is important to call `poll_next` after pushing new futures.
+//! If `poll_next` returns `Poll::Ready(None)` this means that the queue is
+//! currently not managing any futures. A future may be submitted to the queue
+//! at a later time. At that point, a call to `poll_next` will either
+//! return the future's resolved value **or** `Poll::Pending` if the future has
+//! not yet completed. When multiple futures are submitted to the queue,
+//! `poll_next` will return `Poll::Pending` until the first future completes, even if
+//! some of the later futures have already completed.
+//! Note that you can create a ready-made `FuturesOrdered` via the
+//! `collect` method, or you can start with an empty queue with the
+//! `FuturesOrdered::new` constructor.
+//! This type is only available when the `std` or `alloc` feature of this
+//! library is activated, and it is activated by default.
 //!
 //! This type is similar to the `FuturesOrdered` type in the `futures`
 //! crate, but is adapted to work in the `tokio` ecosystem.
-//!! # Examples
+//! # Examples
 //! ```
 //!
 //! use tokio_stream_util::FuturesOrdered;
