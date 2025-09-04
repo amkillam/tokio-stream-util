@@ -17,9 +17,9 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "async-sink"
-version = "0.2.3"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca09697c9a589695841c274f66885026087976a4c2b96425eae1efd9db89592b"
+checksum = "017d8032701ff6e178f9e6d96c21f61f3604675691947b4937b828c99be8e4d9"
 dependencies = [
  "either",
  "tokio-stream",
@@ -332,7 +332,7 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream-util"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-sink",
  "either",
