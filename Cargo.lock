@@ -24,7 +24,7 @@ dependencies = [
  "either",
  "tokio",
  "tokio-stream",
- "tokio-stream-util 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-stream-util 0.2.0",
 ]
 
 [[package]]
@@ -342,8 +342,9 @@ dependencies = [
 [[package]]
 name = "tokio-stream-util"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07d7ab1991d17dea81178fb32a664d144c690ab1bb8eccd044828ed632d8df50"
 dependencies = [
- "async-sink",
  "either",
  "futures-core",
  "futures-task",
@@ -354,10 +355,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream-util"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07d7ab1991d17dea81178fb32a664d144c690ab1bb8eccd044828ed632d8df50"
+version = "0.2.1"
 dependencies = [
+ "async-sink",
  "either",
  "futures-core",
  "futures-task",
