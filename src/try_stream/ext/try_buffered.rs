@@ -150,6 +150,7 @@ use async_sink::Sink;
 // Forwarding impl of Sink from the underlying stream
 impl<S, Item, E> Sink<Item> for TryBuffered<S>
 where
+    E: core::error::Error,
     S: TryStream + Sink<Item, Error = E>,
     S::Ok: TryFuture<Error = E>,
 {

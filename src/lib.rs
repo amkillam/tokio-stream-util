@@ -36,6 +36,3 @@ pub mod flatten_unordered;
 
 #[cfg(feature = "alloc")]
 pub use flatten_unordered::FlattenUnordered;
-
-#[cfg(feature = "sync")]
-pub mod sync;

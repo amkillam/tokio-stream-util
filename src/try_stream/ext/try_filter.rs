@@ -190,6 +190,7 @@ where
 #[cfg(feature = "sink")]
 impl<St, Fut, F, Item, E> Sink<Item> for TryFilter<St, Fut, F>
 where
+    E: core::error::Error,
     St: TryStream + Sink<Item, Error = E>,
 {
     type Error = E;

@@ -56,8 +56,8 @@ use async_sink::Sink;
 #[cfg(feature = "sink")]
 impl<St, E, Item> async_sink::Sink<Item> for ErrInto<St, E>
 where
+    E: From<St::Error> + core::error::Error,
     St: Sink<Item>,
-    St::Error: Into<E>,
 {
     type Error = E;
 

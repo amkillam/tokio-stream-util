@@ -17,19 +17,11 @@ jobs:
           [
             "--features=alloc",
             "--features=alloc,io",
-            "--features=alloc,io,sink,std,sync",
-            "--features=alloc,io,sink,sync",
-            "--features=alloc,io,sync",
             "--features=io",
             "--features=io,sink",
-            "--features=io,sink,std,sync",
-            "--features=io,sink,sync",
             "--features=io,std",
-            "--features=io,std,sync",
-            "--features=io,sync",
             "--features=sink",
             "--features=std",
-            "--features=sync",
             "",
           ]
     steps:
@@ -54,19 +46,11 @@ jobs:
           [
             "--features=alloc",
             "--features=alloc,io",
-            "--features=alloc,io,sink,std,sync",
-            "--features=alloc,io,sink,sync",
-            "--features=alloc,io,sync",
             "--features=io",
             "--features=io,sink",
-            "--features=io,sink,std,sync",
-            "--features=io,sink,sync",
             "--features=io,std",
-            "--features=io,std,sync",
-            "--features=io,sync",
             "--features=sink",
             "--features=std",
-            "--features=sync",
             "",
           ]
     steps:

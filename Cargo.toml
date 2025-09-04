@@ -14,7 +14,7 @@ documentation = "https://docs.rs/tokio-stream-util"
 rust-version = "1.45"
 
 [features]
-default = ["std", "alloc"]
+default = ["std", "alloc", "sink"]
 std = [
   "futures-core/std",
   "async-sink/std",
@@ -23,17 +23,14 @@ std = [
   "futures-util/std",
 ]
 alloc = ["futures-core/alloc", "futures-task/alloc", "async-sink/alloc"]
-sync = ["dep:tokio", "tokio-stream/sync", "async-sink/sync"]
 portable-atomic = [
   "futures-core/portable-atomic",
   "futures-util/portable-atomic",
-  "async-sink/portable-atomic",
 ]
 cfg-target-has-atomic = [
   "futures-core/cfg-target-has-atomic",
   "futures-task/cfg-target-has-atomic",
   "futures-util/cfg-target-has-atomic",
-  "async-sink/cfg-target-has-atomic",
 ]
 sink = ["dep:async-sink"]
 io = ["dep:tokio", "tokio-stream/io-util", "tokio/io-util"]
@@ -46,7 +43,7 @@ tokio = { version = "^1.15.0", default-features = false, features = [
   "sync",
 ], optional = true }
 futures-core = { version = "^0.3.31", default-features = false }
-async-sink = { version = "=0.1.0", default-features = false, optional = true }
+async-sink = { version = "^0.2.0", default-features = false, optional = true }
 either = { version = "^1.15.0", default-features = false }
 futures-task = { version = "^0.3.31", default-features = false }
 futures-util = { version = "^0.3.31", default-features = false }
