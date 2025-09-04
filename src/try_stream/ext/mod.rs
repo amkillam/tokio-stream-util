@@ -291,7 +291,7 @@ pub trait TryStreamExt: TryStream {
     #[cfg_attr(docsrs, doc(cfg(all(feature = "sink", feature = "alloc"))))]
     fn try_forward<S>(self, sink: S) -> TryForward<Self, S>
     where
-        S: tokio_sink::Sink<Self::Ok, Error = Self::Error>,
+        S: async_sink::Sink<Self::Ok, Error = Self::Error>,
         Self: Sized,
     {
         TryForward::new(self, sink)

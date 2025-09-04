@@ -174,7 +174,7 @@ impl<T, E: fmt::Display> fmt::Display for TryReadyChunksError<T, E> {
 impl<T, E: fmt::Debug + fmt::Display> core::error::Error for TryReadyChunksError<T, E> {}
 
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 #[cfg(feature = "sink")]
 // Forwarding impl of Sink from the underlying stream
 impl<St, Item> Sink<Item> for TryReadyChunks<St>

@@ -1,9 +1,9 @@
+#[cfg(feature = "sink")]
+use async_sink::Sink;
 use core::fmt;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::future::TryFuture;
-#[cfg(feature = "sink")]
-use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 use super::{FusedStream, TryStream};

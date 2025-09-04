@@ -93,7 +93,7 @@ impl<St: TryStream> Stream for IntoStream<St> {
 }
 
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 #[cfg(feature = "sink")]
 // Forwarding impl of Sink from the underlying stream
 impl<St, Item> Sink<Item> for IntoStream<St>

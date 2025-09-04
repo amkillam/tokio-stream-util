@@ -52,9 +52,9 @@ where
 }
 
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 #[cfg(feature = "sink")]
-impl<St, E, Item> tokio_sink::Sink<Item> for ErrInto<St, E>
+impl<St, E, Item> async_sink::Sink<Item> for ErrInto<St, E>
 where
     St: Sink<Item>,
     St::Error: Into<E>,

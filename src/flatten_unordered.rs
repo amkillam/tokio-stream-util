@@ -58,9 +58,9 @@ use core::{
 };
 
 use crate::FusedStream;
-use futures_task::{waker, ArcWake};
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
+use futures_task::{waker, ArcWake};
 use tokio_stream::Stream;
 
 use crate::FuturesUnordered;

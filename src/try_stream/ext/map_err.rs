@@ -98,7 +98,7 @@ where
 }
 
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 #[cfg(feature = "sink")]
 impl<St, E, Item, F> Sink<Item> for MapErr<St, E, F>
 where
@@ -107,7 +107,7 @@ where
     E: Error,
     F: FnMut(<St as crate::try_stream::TryStream>::Error) -> E,
 {
-    type Error = <St as tokio_sink::Sink<Item>>::Error;
+    type Error = <St as async_sink::Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut proj = self.project();

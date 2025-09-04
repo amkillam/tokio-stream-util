@@ -108,14 +108,14 @@ where
 }
 
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 #[cfg(feature = "sink")]
 impl<St, Item, F> Sink<Item> for InspectErr<St, F>
 where
     St: TryStream + Sink<Item>,
     F: FnMut(&<St as crate::try_stream::TryStream>::Error),
 {
-    type Error = <St as tokio_sink::Sink<Item>>::Error;
+    type Error = <St as async_sink::Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let this = unsafe { self.get_unchecked_mut() };

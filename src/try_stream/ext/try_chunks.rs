@@ -5,7 +5,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 use tokio_stream::Stream;
 
 use super::IntoFuseStream;

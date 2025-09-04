@@ -1,9 +1,9 @@
 use super::into_stream::IntoFuseStream;
 use super::TryStream;
+use async_sink::Sink;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::future::{FusedFuture, Future};
-use tokio_sink::Sink;
 use tokio_stream::Stream;
 
 /// Future for the [`try_forward`](super::TryStreamExt::try_forward) method.

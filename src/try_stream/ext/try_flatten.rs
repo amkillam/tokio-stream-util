@@ -4,7 +4,7 @@ use core::task::{Context, Poll};
 
 use super::{FusedStream, TryStream};
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 use tokio_stream::Stream;
 
 /// Stream for the [`try_flatten`](super::TryStreamExt::try_flatten) method.

@@ -95,7 +95,7 @@ where
 }
 
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 #[cfg(feature = "sink")]
 // Forwarding impl of Sink from the underlying stream
 impl<St, Item> Sink<Item> for TryBufferUnordered<St>
@@ -103,7 +103,7 @@ where
     St: TryStream + Sink<Item>,
     St::Ok: TryFuture<Error = <St as crate::try_stream::TryStream>::Error>,
 {
-    type Error = <St as tokio_sink::Sink<Item>>::Error;
+    type Error = <St as async_sink::Sink<Item>>::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // Forward Sink to the underlying St via IntoFuseStream -> IntoStream -> St

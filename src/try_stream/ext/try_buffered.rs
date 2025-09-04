@@ -145,7 +145,7 @@ where
 }
 
 #[cfg(feature = "sink")]
-use tokio_sink::Sink;
+use async_sink::Sink;
 #[cfg(feature = "sink")]
 // Forwarding impl of Sink from the underlying stream
 impl<S, Item, E> Sink<Item> for TryBuffered<S>
