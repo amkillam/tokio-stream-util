@@ -1,9 +1,9 @@
-//! Stream for the [`flatten_unordered`](super::StreamExt::flatten_unordered)
-//! method with ability to specify flow controller.
-//! ! This is a more generic version of `FlattenUnordered` which allows to
-//! ! control the flow of items from the base stream to the inner streams.
-//! ! The main use-case is to immediately return an item from the base stream
-//! //! ! without adding it to the inner streams bucket.
+//! Stream for flattening a stream of streams in an unordered fashion,
+//! with ability to specify flow controller.
+//! This is a more generic version of `FlattenUnordered` which allows to
+//! control the flow of items from the base stream to the inner streams.
+//! The main use-case is to immediately return an item from the base stream
+//! without adding it to the inner streams bucket.
 //!
 //! # Examples
 //! ```
@@ -65,8 +65,7 @@ use tokio_stream::Stream;
 
 use crate::FuturesUnordered;
 
-/// Stream for the [`flatten_unordered`](super::StreamExt::flatten_unordered)
-/// method.
+/// Stream for flattening a stream of streams in an unordered fashion.
 pub type FlattenUnordered<St> = FlattenUnorderedWithFlowController<St, ()>;
 
 /// There is nothing to poll and stream isn't being polled/waking/woken at the moment.
@@ -341,8 +340,8 @@ impl<St: Stream + Unpin> Future for PollStreamFut<St> {
     }
 }
 
-/// Stream for the [`flatten_unordered`](super::StreamExt::flatten_unordered)
-/// method with ability to specify flow controller.
+/// Stream for flattening a stream of streams in an unordered fashion,
+/// with ability to specify flow controller.
 #[must_use = "streams do nothing unless polled"]
 pub struct FlattenUnorderedWithFlowController<St, Fc>
 where

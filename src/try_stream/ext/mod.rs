@@ -105,7 +105,6 @@ pub use try_buffered::TryBuffered;
 #[cfg(all(feature = "io", feature = "std"))]
 mod into_async_read;
 #[cfg(all(feature = "io", feature = "std"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "io")))]
 pub use into_async_read::IntoAsyncRead;
 
 mod try_all;
@@ -276,6 +275,7 @@ pub trait TryStreamExt: TryStream {
         OrElse::new(self, f)
     }
 
+    #[cfg(all(feature = "sink", feature = "alloc"))]
     /// A future that completes after the given stream has been fully processed
     /// into the sink and the sink has been flushed and closed.
     ///
@@ -287,8 +287,6 @@ pub trait TryStreamExt: TryStream {
     /// (for example, via `try_forward(&mut sink)` inside an `async` fn/block) in
     /// order to preserve access to the `Sink`. If the stream produces an error,
     /// that error will be returned by this future without flushing/closing the sink.
-    #[cfg(all(feature = "sink", feature = "alloc"))]
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "sink", feature = "alloc"))))]
     fn try_forward<S>(self, sink: S) -> TryForward<Self, S>
     where
         S: async_sink::Sink<Self::Ok, Error = Self::Error>,
@@ -387,7 +385,7 @@ pub trait TryStreamExt: TryStream {
     /// resolves to `true`.
     ///
     /// This function is similar to
-    /// [`StreamExt::skip_while`](tokio_stream::stream::StreamExt::skip_while) but exits
+    /// [`StreamExt::skip_while`](futures_util::stream::StreamExt::skip_while) but exits
     /// early if an error occurs.
     ///
     /// # Examples
@@ -421,7 +419,7 @@ pub trait TryStreamExt: TryStream {
     /// resolves to `true`.
     ///
     /// This function is similar to
-    /// [`StreamExt::take_while`](tokio_stream::stream::StreamExt::take_while) but exits
+    /// [`StreamExt::take_while`](futures_util::stream::StreamExt::take_while) but exits
     /// early if an error occurs.
     ///
     /// # Examples
@@ -496,7 +494,7 @@ pub trait TryStreamExt: TryStream {
     /// library is activated, and it is activated by default.
     ///
     /// This function is similar to
-    /// [`StreamExt::chunks`](tokio_stream::stream::StreamExt::chunks) but exits
+    /// [`StreamExt::chunks`](futures_util::stream::StreamExt::chunks) but exits
     /// early if an error occurs.
     ///
     /// # Examples
@@ -552,7 +550,7 @@ pub trait TryStreamExt: TryStream {
     /// library is activated, and it is activated by default.
     ///
     /// This function is similar to
-    /// [`StreamExt::ready_chunks`](tokio_stream::stream::StreamExt::ready_chunks) but exits
+    /// [`StreamExt::ready_chunks`](futures_util::stream::StreamExt::ready_chunks) but exits
     /// early if an error occurs.
     ///
     /// # Examples
@@ -753,7 +751,7 @@ pub trait TryStreamExt: TryStream {
     ///
     /// Works with all collections that implement the [`Extend`](core::iter::Extend) trait.
     ///
-    /// This method is similar to [`concat`](tokio_stream::stream::StreamExt::concat), but will
+    /// This method is similar to [`concat`](futures_util::stream::StreamExt::concat), but will
     /// exit early if an error is encountered in the stream.
     ///
     /// # Examples
@@ -885,6 +883,7 @@ pub trait TryStreamExt: TryStream {
         Pin::new(self).try_poll_next(cx)
     }
 
+    #[cfg(all(feature = "io", feature = "std"))]
     /// Adapter that converts this stream into an [`AsyncBufRead`](crate::io::AsyncBufRead).
     ///
     /// This method is only available when the `std` feature of this
@@ -905,9 +904,6 @@ pub trait TryStreamExt: TryStream {
     ///     assert_eq!(buf, vec![1, 2, 3]);
     /// });
     /// ```
-    #[cfg(feature = "io")]
-    #[cfg(feature = "std")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "io")))]
     fn into_async_read(self) -> IntoAsyncRead<Self>
     where
         Self: Sized + TryStreamExt<Error = std::io::Error>,

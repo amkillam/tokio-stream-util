@@ -6,7 +6,7 @@ use core::task::{Context, Poll};
 
 use crate::{FusedStream, TryStream};
 
-/// Stream for the [`inspect_err`](super::TryStreamExt::inspect_err) method.
+/// Stream for the [`inspect_err`](crate::TryStreamExt::inspect_err) method.
 pub struct InspectErr<St, F> {
     stream: IntoStream<St>,
     f: F,
